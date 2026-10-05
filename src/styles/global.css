@@ -642,3 +642,8 @@ textarea {
 .receipt-refund-dialog p, .receipt-refund-dialog ul { line-height: 1.6; margin-bottom: 16px; }
 .receipt-refund-dialog .form-actions { flex-wrap: wrap; }
 .refund-history { display: block; margin-top: 6px; color: #94a3b8; }
+
+.supplier-filters { display: grid; grid-template-columns: minmax(240px, 1fr) 180px; gap: 16px; align-items: end; margin-bottom: 20px; }
+.supplier-filters .field { margin: 0; }
+.supplier-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.supplier-fields:disabled { opacity: .7; }

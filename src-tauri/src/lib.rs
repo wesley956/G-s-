@@ -124,6 +124,12 @@ pub fn run() {
             sql: include_str!("../migrations/0005_receipt_refunds.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 6,
+            description: "supplier_registry",
+            sql: include_str!("../migrations/0006_suppliers.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

@@ -62,7 +62,13 @@ pub async fn validate(path:&Path)->Result<()> {
         }
         if names.iter().any(|name|name=="_sqlx_migrations") {
             let versions:Vec<i64>=sqlx::query_scalar("SELECT version FROM _sqlx_migrations WHERE success=1").fetch_all(&pool).await.map_err(|e|e.to_string())?;
-            if versions.iter().any(|version|*version>5) {return Err("Este backup é de uma versão mais nova do aplicativo.".into());}
+            if versions.iter().any(|version|*version>6) {return Err("Este backup é de uma versão mais nova do aplicativo.".into());}
+            if versions.contains(&6) {
+                let rows=sqlx::query("PRAGMA table_info(suppliers)").fetch_all(&pool).await.map_err(|e|e.to_string())?;
+                for column in "id,name,contact_name,phone,whatsapp,document,email,address,notes,active,created_at,updated_at".split(',') {
+                    if !rows.iter().any(|row|row.get::<String,_>("name")==column) {return Err(format!("Backup incompatível: falta suppliers.{column}."));}
+                }
+            }
             if versions.contains(&5) {
                 for (table,columns) in [("account_payment_receipts","payment_id,receipt_transaction_id"),("account_payment_refunds","payment_id,cash_transaction_id,reason,created_at")] {
                     let rows=sqlx::query(&format!("PRAGMA table_info({table})")).fetch_all(&pool).await.map_err(|e|e.to_string())?;
@@ -117,7 +123,7 @@ pub fn export(source:&Path,destination:&Path)->Result<()> {
     let result=std::io::copy(&mut input,&mut output).and_then(|_|output.sync_all());drop(output);
     if let Err(e)=result {let _=std::fs::remove_file(destination);return Err(format!("Não foi possível exportar: {e}"));}Ok(())
 }
-/// Accept known v4/v5 histories; SQLx upgrades v4 after recovery, before use.
+/// Accept known v4/v5/v6 histories; SQLx upgrades older known schemas after recovery, before use.
 /// Real app backups must retain their exact migration checksums.
 pub async fn validate_restore(path:&Path)->Result<()> {
     use sha2::{Digest,Sha384};
@@ -125,7 +131,7 @@ pub async fn validate_restore(path:&Path)->Result<()> {
     let pool=SqlitePoolOptions::new().max_connections(1).connect_with(SqliteConnectOptions::new().filename(path).read_only(true).create_if_missing(false)).await.map_err(|e|e.to_string())?;
     let result=async {
         let rows=sqlx::query("SELECT version,success,checksum FROM _sqlx_migrations ORDER BY version").fetch_all(&pool).await.map_err(|_|"Backup incompatível: histórico de migrações ausente.".to_string())?;
-        let migrations=[include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql")];
+        let migrations=[include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql"),include_str!("../migrations/0006_suppliers.sql")];
         if !(4..=migrations.len()).contains(&rows.len()) {return Err("Backup incompatível: versão do banco não suportada.".into());}
         for (index,row) in rows.iter().enumerate() {
             let checksum:Vec<u8>=row.get("checksum");
