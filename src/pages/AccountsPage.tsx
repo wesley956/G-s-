@@ -6,10 +6,11 @@ import { listCustomers } from "../services/customerService";
 import type { Customer } from "../types/customer";
 
 export function AccountsPage() {
+  const [error, setError] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [query, setQuery] = useState("");
 
-  useEffect(() => { void listCustomers().then(setCustomers); }, []);
+  useEffect(() => { void listCustomers().then(setCustomers).catch(err => setError(String(err))); }, []);
 
   const debtors = useMemo(() => {
     const term = query.trim().toLocaleLowerCase("pt-BR");
@@ -30,6 +31,7 @@ export function AccountsPage() {
         </div>
       </header>
 
+      {error && <div className="feedback error">{error}</div>}
       <div className="summary-strip">
         <div><span>Clientes devendo</span><strong>{debtors.length}</strong></div>
         <div><span>Total a receber</span><strong>{formatCurrency(total)}</strong></div>

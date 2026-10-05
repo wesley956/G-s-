@@ -6,7 +6,9 @@ import {
   ReceiptText,
   WalletCards,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { previewCents } from "../lib/money";
+import { receiptDate } from "../lib/receipt";
 import { formatCurrency } from "../services/productService";
 import {
   addCashTransaction,
@@ -59,6 +61,8 @@ export function CashRegisterPage() {
   const [movementDescription, setMovementDescription] = useState("");
   const [closingAmount, setClosingAmount] = useState("");
   const [closingNotes, setClosingNotes] = useState("");
+  const busy = useRef(false);
+  const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,16 +85,17 @@ export function CashRegisterPage() {
   }
 
   useEffect(() => {
-    void load();
+    void load().catch(err => setError(String(err)));
   }, []);
 
   const difference = useMemo(() => {
-    const normalized = Number(closingAmount.replace(/\./g, "").replace(",", ".") || 0) * 100;
+    const normalized = previewCents(closingAmount);
     return Math.round(normalized) - summary.expectedCashCents;
   }, [closingAmount, summary.expectedCashCents]);
 
   async function handleOpen(event: FormEvent) {
     event.preventDefault();
+    if (busy.current) return; busy.current = true; setSaving(true);
     setError(null);
     setFeedback(null);
     try {
@@ -101,12 +106,13 @@ export function CashRegisterPage() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível abrir o caixa.");
-    }
+    } finally { busy.current=false; setSaving(false); }
   }
 
   async function handleMovement(event: FormEvent) {
     event.preventDefault();
     if (!session) return;
+    if (busy.current) return; busy.current = true; setSaving(true);
     setError(null);
     setFeedback(null);
 
@@ -123,12 +129,13 @@ export function CashRegisterPage() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível registrar.");
-    }
+    } finally { busy.current=false; setSaving(false); }
   }
 
   async function handleClose(event: FormEvent) {
     event.preventDefault();
     if (!session) return;
+    if (busy.current) return; busy.current = true; setSaving(true);
     setError(null);
     setFeedback(null);
 
@@ -147,7 +154,7 @@ export function CashRegisterPage() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível fechar o caixa.");
-    }
+    } finally { busy.current=false; setSaving(false); }
   }
 
   if (!session) {
@@ -193,7 +200,7 @@ export function CashRegisterPage() {
             {error && <div className="feedback error">{error}</div>}
             {feedback && <div className="feedback success">{feedback}</div>}
 
-            <button className="primary-button cash-main-button">
+            <button disabled={saving} className="primary-button cash-main-button">
               Abrir caixa
             </button>
           </form>
@@ -242,7 +249,7 @@ export function CashRegisterPage() {
           <p className="eyebrow">Controle financeiro diário</p>
           <h1>Caixa aberto</h1>
           <p className="muted">
-            Aberto em {new Date(session.opened_at).toLocaleString("pt-BR")}.
+            Aberto em {receiptDate(session.opened_at)}.
           </p>
         </div>
         <span className="cash-open-pill">● ABERTO</span>
@@ -250,7 +257,7 @@ export function CashRegisterPage() {
 
       <div className="cash-metrics">
         <article>
-          <span>Vendas totais</span>
+          <span>Vendas menos estornos</span>
           <strong>{formatCurrency(summary.totalSalesCents)}</strong>
         </article>
         <article>
@@ -284,7 +291,11 @@ export function CashRegisterPage() {
               <div><span>PIX</span><strong>{formatCurrency(summary.pixSalesCents)}</strong></div>
               <div><span>Débito</span><strong>{formatCurrency(summary.debitSalesCents)}</strong></div>
               <div><span>Crédito</span><strong>{formatCurrency(summary.creditSalesCents)}</strong></div>
-              <div><span>Fiado</span><strong>{formatCurrency(summary.customerCreditCents)}</strong></div>\n              <div><span>Recebimentos de caderneta</span><strong className="positive-text">{formatCurrency(summary.receiptCashCents + summary.receiptPixCents + summary.receiptDebitCents + summary.receiptCreditCents)}</strong></div>
+              <div><span>Fiado</span><strong>{formatCurrency(summary.customerCreditCents)}</strong></div>
+              <div><span>Caderneta — dinheiro</span><strong>{formatCurrency(summary.receiptCashCents)}</strong></div>
+              <div><span>Caderneta — PIX</span><strong>{formatCurrency(summary.receiptPixCents)}</strong></div>
+              <div><span>Caderneta — débito</span><strong>{formatCurrency(summary.receiptDebitCents)}</strong></div>
+              <div><span>Caderneta — crédito</span><strong>{formatCurrency(summary.receiptCreditCents)}</strong></div>
               <div><span>Suprimentos</span><strong className="positive-text">+ {formatCurrency(summary.suppliesCents)}</strong></div>
               <div><span>Sangrias</span><strong className="danger-text">- {formatCurrency(summary.withdrawalsCents)}</strong></div>
               <div><span>Despesas</span><strong className="danger-text">- {formatCurrency(summary.expensesCents)}</strong></div>
@@ -362,7 +373,7 @@ export function CashRegisterPage() {
               <textarea rows={3} value={movementDescription} onChange={(e) => setMovementDescription(e.target.value)} placeholder="Motivo da movimentação" />
             </label>
 
-            <button className="secondary-button cash-main-button">Registrar</button>
+            <button disabled={saving} className="secondary-button cash-main-button">Registrar</button>
           </form>
 
           <form className="panel close-cash-panel" onSubmit={handleClose}>
@@ -402,7 +413,7 @@ export function CashRegisterPage() {
             {error && <div className="feedback error">{error}</div>}
             {feedback && <div className="feedback success">{feedback}</div>}
 
-            <button className="primary-button danger-button cash-main-button">
+            <button disabled={saving} className="primary-button danger-button cash-main-button">
               Fechar caixa
             </button>
           </form>

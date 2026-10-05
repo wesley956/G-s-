@@ -6,6 +6,7 @@ import { listCustomers, setCustomerActive } from "../services/customerService";
 import type { Customer } from "../types/customer";
 
 export function CustomersPage() {
+  const [error, setError] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [query, setQuery] = useState("");
 
@@ -13,7 +14,7 @@ export function CustomersPage() {
     setCustomers(await listCustomers());
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load().catch(err => setError(String(err))); }, []);
 
   const filtered = useMemo(() => {
     const term = query.trim().toLocaleLowerCase("pt-BR");
@@ -39,6 +40,7 @@ export function CustomersPage() {
         </Link>
       </header>
 
+      {error && <div className="feedback error">{error}</div>}
       <div className="summary-strip">
         <div><span>Clientes cadastrados</span><strong>{customers.length}</strong></div>
         <div><span>Ativos</span><strong>{customers.filter((c) => c.active).length}</strong></div>
@@ -66,7 +68,7 @@ export function CustomersPage() {
                   <td><span className={customer.active ? "status-pill active" : "status-pill inactive"}>{customer.active ? "Ativo" : "Inativo"}</span></td>
                   <td className="table-actions customer-actions">
                     <Link className="ghost-button" to={`/accounts/${customer.id}`}>Caderneta</Link>
-                    <button className="ghost-button" onClick={async () => { await setCustomerActive(customer.id, !Boolean(customer.active)); await load(); }}>
+                    <button className="ghost-button" onClick={async () => { try { await setCustomerActive(customer.id, !Boolean(customer.active)); await load(); } catch(err) { setError(String(err)); } }}>
                       {customer.active ? "Desativar" : "Ativar"}
                     </button>
                   </td>

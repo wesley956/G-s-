@@ -37,6 +37,12 @@ jobs:
           workspaces: src-tauri/domain
       - run: cargo test --manifest-path src-tauri/domain/Cargo.toml
       - run: cargo build --manifest-path src-tauri/domain/Cargo.toml --bin domain-runner
+      - uses: actions/upload-artifact@v4
+        with:
+          name: domain-runner-${{ github.run_id }}
+          path: |
+            src-tauri/domain/target/debug/domain-runner
+            src-tauri/domain/Cargo.lock
       - run: npm ci
       - run: npm install --no-save --package-lock=false playwright
       - run: npx playwright install --with-deps chromium

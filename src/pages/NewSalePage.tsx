@@ -61,7 +61,7 @@ export function NewSalePage() {
 
   const subtotal = cart.reduce((sum, item) => {
     const unit = saleType === "COUNTER" ? item.product.counter_price_cents : item.product.delivery_price_cents;
-    return sum + unit * item.quantity;
+    return sum + Math.round(unit * item.quantity);
   }, 0);
 
   const rawDiscount = previewCents(discount) / 100;

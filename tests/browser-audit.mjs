@@ -19,7 +19,7 @@ try {
  assert.equal(db.prepare('SELECT total_cents FROM sales').get().total_cents,11000);
  assert.equal(db.prepare("SELECT amount_cents FROM payments WHERE method='PIX'").get().amount_cents,6000);
  assert.equal(db.prepare("SELECT change_cents FROM payments WHERE method='CASH'").get().change_cents,5000);
- await page.getByRole('button',{name:'Fechar',exact:true}).click();
+ await page.getByRole('button',{name:'Fechar comprovante',exact:true}).click();
  await page.getByRole('link',{name:'Produtos',exact:true}).click();
  await page.getByRole('row').filter({hasText:'Gás P13'}).getByRole('link',{name:'Editar',exact:true}).click();
  await page.getByLabel(/Nome do produto/).fill('Gás P13 revisado');
@@ -29,7 +29,7 @@ try {
  await page.getByLabel('Nova categoria').waitFor({state:'visible'});
  await page.waitForFunction(()=>document.querySelector('select')?.selectedOptions[0]?.textContent==='Combustíveis');
  await page.getByRole('button',{name:'Salvar produto'}).click();
- await page.getByRole('cell',{name:'Gás P13 revisado',exact:true}).waitFor();
+ await page.getByText('Gás P13 revisado',{exact:true}).waitFor();
  assert.equal(db.prepare("SELECT counter_price_cents FROM products WHERE id='gas'").get().counter_price_cents,11550);
  await page.getByRole('link',{name:'Estoque',exact:true}).click();
  await page.getByRole('button',{name:/Gás P13 revisado/}).click();
