@@ -1,6 +1,8 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
 import { DashboardPage } from "./pages/DashboardPage";
+import { ProductFormPage } from "./pages/ProductFormPage";
+import { ProductsPage } from "./pages/ProductsPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 
 export default function App() {
@@ -10,7 +12,8 @@ export default function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/sales/new" element={<PlaceholderPage title="Nova Venda" />} />
         <Route path="/sales" element={<PlaceholderPage title="Vendas" />} />
-        <Route path="/products" element={<PlaceholderPage title="Produtos" />} />
+        <Route path="/products" element={<ProductsPage />} />
+        <Route path="/products/new" element={<ProductFormPage />} />
         <Route path="/inventory" element={<PlaceholderPage title="Estoque" />} />
         <Route path="/customers" element={<PlaceholderPage title="Clientes" />} />
         <Route path="/accounts" element={<PlaceholderPage title="Cadernetas" />} />
