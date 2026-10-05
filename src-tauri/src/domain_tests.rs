@@ -105,3 +105,12 @@ async fn receipt_snapshot_keeps_original_names_and_prices(){
  let s=apply(&f.pool,operation("SALE",input())).await.unwrap();assert_eq!(s["printMode"],"AUTO_TWO");f.pool.execute("UPDATE customers SET name='Outro'; UPDATE products SET name='Outro',delivery_price_cents=99999; UPDATE app_settings SET value='{}'").await.unwrap();
  let stored:String=sqlx::query_scalar("SELECT snapshot_json FROM sale_receipt_snapshots").fetch_one(&f.pool).await.unwrap();let value:Value=serde_json::from_str(&stored).unwrap();assert_eq!(value["business"]["businessName"],"Loja original");assert_eq!(value["customer"]["name"],"José");assert_eq!(sqlx::query_scalar::<_,i64>("SELECT unit_price_cents FROM sale_items").fetch_one(&f.pool).await.unwrap(),12000);
 }
+
+#[tokio::test]
+async fn inactive_customer_can_pay_existing_debt_but_cannot_start_new_credit(){
+ let f=setup().await;apply(&f.pool,operation("SALE",input())).await.unwrap();
+ f.pool.execute("UPDATE customers SET active=0 WHERE id='customer'").await.unwrap();
+ apply(&f.pool,operation("RECEIVE",json!({"customerId":"customer","amountCents":5000,"method":"PIX"}))).await.unwrap();
+ assert!(apply(&f.pool,operation("SALE",input())).await.is_err());
+ assert_eq!(sqlx::query_scalar::<_,String>("SELECT status FROM customer_account_entries WHERE type='DEBIT'").fetch_one(&f.pool).await.unwrap(),"PAID");
+}
