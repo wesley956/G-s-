@@ -1,4 +1,7 @@
 import { getDb } from "../lib/db";
+import { makeReceiptSnapshot } from "../lib/receipt";
+import { getReceiptSettings } from "./receiptSettingsService";
+import type { ReceiptCustomer } from "../types/receipt";
 import type { PaymentInput, SaleCartItem, SaleProduct, SaleRecord, SaleType } from "../types/sale";
 
 export async function listSaleProducts() {
@@ -62,6 +65,14 @@ export async function completeSale(input: {
   );
   const saleNumber = nextNumberRows[0]?.next_number ?? 1;
   const saleId = crypto.randomUUID();
+
+  const [receiptSettings, receiptCustomers] = await Promise.all([
+    getReceiptSettings(),
+    input.customerId
+      ? db.select<ReceiptCustomer[]>("SELECT name, document, address, phone FROM customers WHERE id = ?", [input.customerId])
+      : Promise.resolve([]),
+  ]);
+  const receiptSnapshot = makeReceiptSnapshot(receiptSettings, receiptCustomers[0] ?? null);
 
   await db.execute("BEGIN IMMEDIATE");
 
@@ -143,13 +154,17 @@ export async function completeSale(input: {
       }
     }
 
+    await db.execute(
+      "INSERT INTO sale_receipt_snapshots (sale_id, snapshot_json) VALUES (?, ?)",
+      [saleId, JSON.stringify(receiptSnapshot)],
+    );
     await db.execute("COMMIT");
   } catch (error) {
     await db.execute("ROLLBACK");
     throw error;
   }
 
-  return { saleId, saleNumber, totalCents };
+  return { saleId, saleNumber, totalCents, printMode: receiptSettings.printMode };
 }
 
 export async function cancelSale(saleId: string, reason: string) {

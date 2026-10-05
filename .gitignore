@@ -28,3 +28,7 @@ Thumbs.db
 # Logs
 *.log
 logs/
+tmp/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
