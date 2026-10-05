@@ -44,7 +44,7 @@ async fn supplier_history_failure_rolls_back_create_and_edit(){
     f.pool.execute("CREATE TRIGGER fail_operation BEFORE INSERT ON operation_results BEGIN SELECT RAISE(ABORT,'forced operation failure'); END").await.unwrap();
     assert!(apply(&f.pool,operation("SUPPLIER",supplier_input())).await.is_err());assert_eq!(count(&f.pool,"suppliers").await,0);
     f.pool.execute("DROP TRIGGER fail_operation").await.unwrap();let supplier=apply(&f.pool,operation("SUPPLIER",supplier_input())).await.unwrap();
-    f.pool.execute("CREATE TRIGGER fail_operation BEFORE INSERT ON operation_results BEGIN SELECT RAISE(ABORT,'forced operation failure'); END").await.unwrap();
+    f.pool.execute("CREATE TRIGGER fail_supplier_edit BEFORE INSERT ON operation_results BEGIN SELECT RAISE(ABORT,'forced operation failure'); END").await.unwrap();
     let mut edited=supplier_input();edited["id"]=supplier;edited["name"]=json!("Novo nome");assert!(apply(&f.pool,operation("SUPPLIER",edited)).await.is_err());
     assert_eq!(sqlx::query_scalar::<_,String>("SELECT name FROM suppliers").fetch_one(&f.pool).await.unwrap(),"Águas São João");
 }
