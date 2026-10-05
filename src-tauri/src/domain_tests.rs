@@ -7,6 +7,11 @@ async fn connect(path: &std::path::Path)->SqlitePool {
 async fn setup()->Fixture {
     let dir=tempfile::tempdir().unwrap();let pool=connect(&dir.path().join("test.db")).await;
     for migration in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql")] {sqlx::raw_sql(migration).execute(&pool).await.unwrap();}
+    pool.execute("CREATE TABLE _sqlx_migrations(version BIGINT PRIMARY KEY,description TEXT,installed_on TEXT DEFAULT CURRENT_TIMESTAMP,success BOOLEAN,checksum BLOB,execution_time BIGINT)").await.unwrap();
+    for (index,migration) in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql")].iter().enumerate() {
+        use sha2::{Digest,Sha384};
+        sqlx::query("INSERT INTO _sqlx_migrations(version,description,success,checksum,execution_time) VALUES (?, 'test migration',1,?,0)").bind(index as i64+1).bind(Sha384::digest(migration.as_bytes()).to_vec()).execute(&pool).await.unwrap();
+    }
     pool.execute("INSERT INTO cash_sessions(id,status,opening_balance_cents) VALUES ('cash','OPEN',10000)").await.unwrap();
     pool.execute("INSERT INTO products(id,name,counter_price_cents,delivery_price_cents,stock_quantity) VALUES ('product','Gás P13',11000,12000,10)").await.unwrap();
     pool.execute("INSERT INTO customers(id,name,phone) VALUES ('customer','José','123')").await.unwrap();Fixture{pool,dir}
@@ -142,4 +147,74 @@ async fn inactive_customer_can_pay_existing_debt_but_cannot_start_new_credit(){
  apply(&f.pool,operation("RECEIVE",json!({"customerId":"customer","amountCents":5000,"method":"PIX"}))).await.unwrap();
  assert!(apply(&f.pool,operation("SALE",input())).await.is_err());
  assert_eq!(sqlx::query_scalar::<_,String>("SELECT status FROM customer_account_entries WHERE type='DEBIT'").fetch_one(&f.pool).await.unwrap(),"PAID");
+}
+#[tokio::test]
+async fn automatic_policy_is_persistent_validated_and_runs_only_when_due() {
+    let f=setup().await;let dir=f.dir.path().join("backups");
+    let policy=backup_policy::Policy{enabled:false,interval_hours:6,retention:3};
+    backup_policy::set(&f.pool,&policy).await.unwrap();assert_eq!(backup_policy::get(&f.pool).await.unwrap(),policy);
+    assert!(backup_policy::check(&f.pool,&dir,0).await.unwrap().is_none());
+    let bad=backup_policy::Policy{enabled:true,interval_hours:2,retention:2};assert!(backup_policy::set(&f.pool,&bad).await.is_err());
+    backup_policy::set(&f.pool,&backup_policy::Policy{enabled:true,..policy}).await.unwrap();
+    backup_policy::check(&f.pool,&dir,0).await.unwrap().unwrap();
+    let first=backup::list(&dir).unwrap().remove(0);
+    assert!(backup_policy::check(&f.pool,&dir,first.created_at_ms+6*3_600_000-1).await.unwrap().is_none());
+    assert!(backup_policy::check(&f.pool,&dir,first.created_at_ms+6*3_600_000).await.unwrap().is_some());
+}
+#[tokio::test]
+async fn concurrent_schedule_checks_create_only_one_snapshot() {
+    let f=setup().await;let dir=f.dir.path().join("backups");
+    let now=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+    let (a,b)=tokio::join!(backup_policy::check(&f.pool,&dir,now),backup_policy::check(&f.pool,&dir,now));
+    assert!(a.is_ok() && b.is_ok());assert_eq!(backup::list(&dir).unwrap().len(),1);
+    let last=backup::list(&dir).unwrap()[0].created_at_ms;
+    assert!(backup_policy::check(&f.pool,&dir,last).await.unwrap().is_none());
+}
+async fn restoration_fixture() -> (Fixture,std::path::PathBuf) {
+    let f=setup().await;let source=f.dir.path().join("saved.sqlite");backup::snapshot(&f.pool,&source).await.unwrap();
+    f.pool.execute("UPDATE products SET stock_quantity=3").await.unwrap();
+    recovery::prepare(&source,f.dir.path()).await.unwrap();
+    // Writes made after preparation must be included in the preventive snapshot.
+    f.pool.execute("UPDATE products SET stock_quantity=2").await.unwrap();f.pool.close().await;
+    std::fs::rename(f.dir.path().join("test.db"),f.dir.path().join("deposito.db")).unwrap();
+    (f,source)
+}
+#[tokio::test]
+async fn restoration_applies_at_startup_and_preventive_copy_keeps_latest_writes() {
+    let (f,_)=restoration_fixture().await;
+    let result=recovery::apply_pending(f.dir.path()).await.unwrap().unwrap();assert!(result.restored);
+    let live=connect(&f.dir.path().join("deposito.db")).await;assert_eq!(stock_qty(&live).await,10.0);live.close().await;
+    let preventive=connect(&f.dir.path().join("backups").join(result.preventive_backup_id.unwrap())).await;assert_eq!(stock_qty(&preventive).await,2.0);preventive.close().await;
+    assert!(recovery::apply_pending(f.dir.path()).await.unwrap().is_none());
+}
+#[tokio::test]
+async fn changed_stage_is_rejected_and_original_database_is_preserved() {
+    let (f,_)=restoration_fixture().await;std::fs::write(f.dir.path().join("restore-pending.sqlite"),b"damaged").unwrap();
+    assert!(!recovery::apply_pending(f.dir.path()).await.unwrap().unwrap().restored);
+    let live=connect(&f.dir.path().join("deposito.db")).await;assert_eq!(stock_qty(&live).await,2.0);live.close().await;
+}
+#[tokio::test]
+async fn interrupted_restore_resumes_after_original_was_moved() {
+    let (f,_)=restoration_fixture().await;
+    std::fs::rename(f.dir.path().join("deposito.db"),f.dir.path().join("deposito.restore-previous.sqlite")).unwrap();
+    assert!(recovery::apply_pending(f.dir.path()).await.unwrap().unwrap().restored);
+    let live=connect(&f.dir.path().join("deposito.db")).await;assert_eq!(stock_qty(&live).await,10.0);live.close().await;
+}
+#[tokio::test]
+async fn interrupted_restore_after_install_finishes_cleanup_and_bad_install_rolls_back() {
+    for damage in [false,true] {
+        let (f,_)=restoration_fixture().await;
+        std::fs::rename(f.dir.path().join("deposito.db"),f.dir.path().join("deposito.restore-previous.sqlite")).unwrap();
+        std::fs::rename(f.dir.path().join("restore-pending.sqlite"),f.dir.path().join("deposito.db")).unwrap();
+        if damage {std::fs::write(f.dir.path().join("deposito.db"),b"incomplete").unwrap();}
+        let report=recovery::apply_pending(f.dir.path()).await.unwrap().unwrap();assert_eq!(report.restored,!damage);
+        let live=connect(&f.dir.path().join("deposito.db")).await;assert_eq!(stock_qty(&live).await,if damage{2.0}else{10.0});live.close().await;
+    }
+}
+#[tokio::test]
+async fn restoration_rejects_unsupported_migrations_without_touching_live_data() {
+    let f=setup().await;let source=f.dir.path().join("future.sqlite");backup::snapshot(&f.pool,&source).await.unwrap();
+    let future=connect(&source).await;future.execute("UPDATE _sqlx_migrations SET checksum=x'00' WHERE version=4").await.unwrap();future.close().await;
+    assert!(recovery::prepare(&source,f.dir.path()).await.is_err());assert_eq!(stock_qty(&f.pool).await,10.0);
+    assert!(!f.dir.path().join("restore-pending.json").exists());
 }

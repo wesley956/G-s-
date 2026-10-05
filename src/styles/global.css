@@ -631,3 +631,7 @@ textarea {
 @media (max-width: 1180px) {
   .account-detail-grid { grid-template-columns: 1fr; }
 }
+
+.backup-recovery-dialog { border: 0; border-radius: 12px; max-width: 560px; padding: 32px; }
+.backup-recovery-dialog::backdrop { background: rgb(0 0 0 / 70%); }
+.action-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
