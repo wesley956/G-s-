@@ -16,6 +16,7 @@ export function CustomerAccountPage() {
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("PIX");
   const busy = useRef(false);
+  const paymentAttempt = useRef<{signature:string; id:string} | null>(null);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +45,10 @@ export function CustomerAccountPage() {
   async function submitPayment(event: FormEvent) {
     event.preventDefault(); if (busy.current) return; busy.current = true; setSaving(true); setError(null); setFeedback(null);
     try {
-      await receiveCustomerPayment({ customerId, amount: paymentAmount, method: paymentMethod, description: "Pagamento de caderneta" });
+      const signature = JSON.stringify({customerId, paymentAmount, paymentMethod});
+      if (paymentAttempt.current?.signature !== signature) paymentAttempt.current = {signature, id:crypto.randomUUID()};
+      await receiveCustomerPayment({ customerId, amount: paymentAmount, method: paymentMethod, description: "Pagamento de caderneta", operationId: paymentAttempt.current.id });
+      paymentAttempt.current = null;
       setPaymentAmount(""); setFeedback("Pagamento registrado com sucesso."); await load();
     } catch (err) { setError(err instanceof Error ? err.message : "Não foi possível receber."); } finally { busy.current = false; setSaving(false); }
   }

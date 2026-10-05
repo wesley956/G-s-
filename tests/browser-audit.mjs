@@ -46,8 +46,12 @@ try {
  await page.getByRole('button',{name:'Adicionar débito'}).click();
  await page.getByText('Lançamento adicionado.',{exact:true}).waitFor();
  await page.getByLabel(/Valor recebido/).fill('40.00');
+ await page.evaluate(()=>window.__losePaymentResponseOnce=true);
+ await page.getByRole('button',{name:'Registrar pagamento',exact:true}).click();
+ await page.getByText('Resposta interrompida após gravar recebimento',{exact:true}).waitFor();
  await page.getByRole('button',{name:'Registrar pagamento',exact:true}).click();
  await page.getByRole('cell',{name:'Parcial',exact:true}).waitFor();
+ assert.equal(db.prepare("SELECT COUNT(*) count FROM customer_account_entries WHERE type='PAYMENT'").get().count,1);
  await page.getByLabel(/Valor recebido/).fill('60,00');
  await page.getByRole('button',{name:'Registrar pagamento',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('.account-balance-box strong')?.textContent.replace(/\s/g,'') === 'R$0,00');

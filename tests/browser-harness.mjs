@@ -25,7 +25,9 @@ window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
   if (command === 'save_receipt_pdf' && window.__cancelPdf) return null;
   if (command === 'save_receipt_pdf' && window.__failPdf) throw new Error('Falha simulada ao salvar PDF');
   const response = await fetch('/__test_ipc', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({command,args}) });
-  const result = await response.json(); if (result.error) throw new Error(result.error); return result.value;
+  const result = await response.json(); if (result.error) throw new Error(result.error);
+  if (command === 'write_operation' && args.operation.kind === 'RECEIVE' && window.__losePaymentResponseOnce) { window.__losePaymentResponseOnce=false; throw new Error('Resposta interrompida após gravar recebimento'); }
+  return result.value;
 } };
 </script>`;
 export const server = await createServer({
