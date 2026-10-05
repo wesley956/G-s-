@@ -55,8 +55,8 @@ async fn open_cash(tx: &mut Tx) -> Result<String> {
 async fn require_cash(tx: &mut Tx, expected: &str) -> Result<()> {
     if open_cash(tx).await? != expected { return Err("O caixa foi fechado ou alterado. Reabra a tela.".into()); } Ok(())
 }
-async fn customer(tx: &mut Tx, customer_id: &str) -> Result<Value> {
-    let r = sqlx::query("SELECT name,document,address,phone FROM customers WHERE id=? AND active=1").bind(customer_id).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?.ok_or("Cliente não encontrado ou inativo.")?;
+async fn customer(tx: &mut Tx, customer_id: &str, active: bool) -> Result<Value> {
+    let r = sqlx::query("SELECT name,document,address,phone FROM customers WHERE id=? AND (?=0 OR active=1)").bind(customer_id).bind(active).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?.ok_or("Cliente não encontrado ou inativo.")?;
     Ok(json!({"name":r.get::<String,_>("name"),"document":r.get::<Option<String>,_>("document"),"address":r.get::<Option<String>,_>("address"),"phone":r.get::<Option<String>,_>("phone")}))
 }
 fn settings_text(settings: &Value, key: &str, default: &str, limit: usize) -> String {
@@ -106,7 +106,7 @@ async fn dispatch(tx: &mut Tx, kind: &str, v: &Value) -> Result<Value> {
             Ok(json!({"expectedCents":expected,"informedCents":informed,"differenceCents":informed-expected}))
         },
         "DEBIT"=>{
-            let cust=text(v,"customerId")?; customer(tx,cust).await?;let amount=money(v,"amountCents",false)?;let due=due_date(v)?;
+            let cust=text(v,"customerId")?; customer(tx,cust,true).await?;let amount=money(v,"amountCents",false)?;let due=due_date(v)?;
             exec(tx,"INSERT INTO customer_account_entries(id,customer_id,type,description,amount_cents,due_date,status) VALUES (?,?,'DEBIT',?,?,?,'OPEN')",vec![json!(id()),json!(cust),json!(optional(v,"description").unwrap_or("Lançamento manual".into())),json!(amount),json!(due)]).await?; Ok(Value::Null)
         },
         "PRODUCT"=>product(tx,v).await,
@@ -123,7 +123,7 @@ async fn sale(tx: &mut Tx,v: &Value)->Result<Value> {
     let typ=text(v,"saleType")?;if !["COUNTER","DELIVERY"].contains(&typ){return Err("Tipo de venda inválido.".into());}
     let items=v.get("items").and_then(Value::as_array).filter(|a| !a.is_empty() && a.len()<=500).ok_or("Adicione produtos à venda.")?;
     let payments=v.get("payments").and_then(Value::as_array).filter(|a|!a.is_empty() && a.len()<=20).ok_or("Informe os pagamentos.")?;
-    let cust=optional(v,"customerId");let snapshot_customer=if let Some(ref c)=cust{customer(tx,c).await?}else{Value::Null};
+    let cust=optional(v,"customerId");let snapshot_customer=if let Some(ref c)=cust{customer(tx,c,true).await?}else{Value::Null};
     let mut seen=HashSet::new();let mut prepared=Vec::new();let mut subtotal=0i64;
     for item in items {
         let product_id=text(item,"productId")?;if !seen.insert(product_id){return Err("Produto duplicado no carrinho.".into());}
@@ -199,7 +199,7 @@ async fn stock(tx:&mut Tx,v:&Value)->Result<Value>{
     Ok(json!({"previousQuantity":current,"newQuantity":next,"delta":delta}))
 }
 async fn receive(tx:&mut Tx,v:&Value)->Result<Value>{
-    let cust=text(v,"customerId")?;customer(tx,cust).await?;let amount=money(v,"amountCents",false)?;let m=method(v,false)?;let cash=open_cash(tx).await?;
+    let cust=text(v,"customerId")?;customer(tx,cust,false).await?;let amount=money(v,"amountCents",false)?;let m=method(v,false)?;let cash=open_cash(tx).await?;
     let balance:i64=sqlx::query_scalar("SELECT COALESCE(SUM(CASE WHEN status='CANCELLED' THEN 0 WHEN type='PAYMENT' THEN -amount_cents ELSE amount_cents END),0) FROM customer_account_entries WHERE customer_id=?").bind(cust).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
     if amount>balance{return Err("O pagamento não pode ser maior que o saldo em aberto.".into());}
     let payment=id();let desc=optional(v,"description").unwrap_or("Pagamento de caderneta".into());

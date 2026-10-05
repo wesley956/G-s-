@@ -134,3 +134,12 @@ async fn corrupt_or_unrelated_backup_is_rejected_without_modifying_source(){
  let unrelated=f.dir.path().join("other.sqlite");let other=connect(&unrelated).await;other.execute("CREATE TABLE other(id TEXT)").await.unwrap();other.close().await;assert!(backup::validate(&unrelated).await.is_err());
  assert_eq!(stock_qty(&f.pool).await,10.0);assert_eq!(count(&f.pool,"sales").await,0);
 }
+
+#[tokio::test]
+async fn inactive_customer_can_pay_existing_debt_but_cannot_start_new_credit(){
+ let f=setup().await;apply(&f.pool,operation("SALE",input())).await.unwrap();
+ f.pool.execute("UPDATE customers SET active=0 WHERE id='customer'").await.unwrap();
+ apply(&f.pool,operation("RECEIVE",json!({"customerId":"customer","amountCents":5000,"method":"PIX"}))).await.unwrap();
+ assert!(apply(&f.pool,operation("SALE",input())).await.is_err());
+ assert_eq!(sqlx::query_scalar::<_,String>("SELECT status FROM customer_account_entries WHERE type='DEBIT'").fetch_one(&f.pool).await.unwrap(),"PAID");
+}
