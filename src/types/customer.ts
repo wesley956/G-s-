@@ -34,6 +34,7 @@ export type AccountEntry = {
   type: "DEBIT" | "PAYMENT" | "ADJUSTMENT";
   description: string | null;
   amount_cents: number;
+  paid_cents: number;
   due_date: string | null;
   status: string;
   attachment_path: string | null;

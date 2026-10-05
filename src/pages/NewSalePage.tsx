@@ -1,5 +1,6 @@
 import { Minus, Plus, Search, ShoppingCart, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { previewCents, toCents, parseDecimal } from "../lib/money";
 import { ReceiptDialog } from "../components/receipts/ReceiptDialog";
 import { listActiveCustomers } from "../services/customerService";
 import { formatCurrency } from "../services/productService";
@@ -26,6 +27,10 @@ export function NewSalePage() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [customerId, setCustomerId] = useState("");
   const [received, setReceived] = useState("");
+  const [mixed, setMixed] = useState(false);
+  const [split, setSplit] = useState<Partial<Record<PaymentMethod, string>>>({});
+  const [dueDate, setDueDate] = useState("");
+  const attempt = useRef<{signature: string; id: string} | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -59,15 +64,17 @@ export function NewSalePage() {
     return sum + unit * item.quantity;
   }, 0);
 
-  const rawDiscount = Number(discount.replace(/\./g, "").replace(",", ".") || 0);
+  const rawDiscount = previewCents(discount) / 100;
   const discountCents = discountMode === "PERCENT"
     ? Math.round(subtotal * Math.max(0, Math.min(rawDiscount, 100)) / 100)
     : Math.round(rawDiscount * 100);
   const safeDiscount = Math.min(subtotal, Math.max(0, discountCents));
   const total = subtotal - safeDiscount;
 
-  const receivedCents = Math.round(Number(received.replace(/\./g, "").replace(",", ".") || 0) * 100);
-  const change = paymentMethod === "CASH" ? Math.max(0, receivedCents - total) : 0;
+  const receivedCents = previewCents(received);
+  const cashAmount = mixed ? previewCents(split.CASH || "") : paymentMethod === "CASH" ? total : 0;
+  const hasCredit = mixed ? previewCents(split.CREDIT_CUSTOMER || "") > 0 : paymentMethod === "CREDIT_CUSTOMER";
+  const change = cashAmount > 0 ? Math.max(0, receivedCents - cashAmount) : 0;
 
   function add(product: SaleProduct) {
     setCart((current) => {
@@ -79,7 +86,7 @@ export function NewSalePage() {
         );
       }
       if (product.stock_quantity <= 0) return current;
-      return [...current, { product, quantity: 1 }];
+      return [...current, { product, quantity: Math.min(1, product.stock_quantity) }];
     });
   }
 
@@ -100,21 +107,21 @@ export function NewSalePage() {
     setError(null);
     setFeedback(null);
 
-    if (paymentMethod === "CREDIT_CUSTOMER" && !customerId) {
-      setError("Selecione o cliente para vender fiado.");
-      return;
-    }
-
-    if (paymentMethod === "CASH" && receivedCents < total) {
-      setError("O valor recebido em dinheiro é menor que o total.");
-      return;
-    }
-
-    const payments: PaymentInput[] = [{
-      method: paymentMethod,
-      amountCents: total,
-      receivedCents: paymentMethod === "CASH" ? receivedCents : null,
-    }];
+    let payments: PaymentInput[];
+    try {
+      const discountNumber = parseDecimal(discount);
+      if (discountMode === "PERCENT" && discountNumber > 100) throw new Error("Desconto percentual deve estar entre 0 e 100.");
+      if (discountMode === "VALUE" && toCents(discount) > subtotal) throw new Error("Desconto maior que o subtotal.");
+      payments = mixed ? (Object.keys(paymentLabels) as PaymentMethod[]).flatMap(method => {
+        const amountCents = toCents(split[method] || "");
+        return amountCents ? [{ method, amountCents, receivedCents: method === "CASH" ? toCents(received) : null }] : [];
+      }) : [{ method: paymentMethod, amountCents: total, receivedCents: paymentMethod === "CASH" ? toCents(received) : null }];
+      if (hasCredit && !customerId) throw new Error("Selecione o cliente para vender fiado.");
+      if (payments.reduce((sum,p) => sum+p.amountCents,0) !== total) throw new Error("A soma dos pagamentos deve ser igual ao total.");
+      if (cashAmount > 0 && toCents(received) < cashAmount) throw new Error("O valor recebido em dinheiro é menor que a parcela em dinheiro.");
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); return; }
+    const signature = JSON.stringify({ saleType, customerId, cart, safeDiscount, payments, dueDate });
+    if (attempt.current?.signature !== signature) attempt.current = { signature, id: crypto.randomUUID() };
 
     savingRef.current = true;
     setSaving(true);
@@ -124,11 +131,14 @@ export function NewSalePage() {
         customerId: customerId || null,
         items: cart,
         discountCents: safeDiscount,
-        payments,
+        payments, dueDate, operationId: attempt.current!.id,
       });
       setFeedback(`Venda #${result.saleNumber} finalizada — ${formatCurrency(result.totalCents)}`);
       setLastSaleId(result.saleId);
+      attempt.current = null;
       setCart([]);
+      setSplit({});
+      setDueDate("");
       setDiscount("");
       setReceived("");
       if (paymentMethod !== "CREDIT_CUSTOMER") setCustomerId("");
@@ -198,10 +208,10 @@ export function NewSalePage() {
                 <div className="cart-item" key={item.product.id}>
                   <div><strong>{item.product.name}</strong><span>{formatCurrency(unit)} cada</span></div>
                   <div className="qty-control">
-                    <button onClick={() => changeQty(item.product.id, -1)}><Minus size={15} /></button>
+                    <button aria-label={`Diminuir ${item.product.name}`} onClick={() => changeQty(item.product.id, -1)}><Minus size={15} /></button>
                     <b>{item.quantity}</b>
-                    <button onClick={() => changeQty(item.product.id, 1)}><Plus size={15} /></button>
-                    <button className="remove" onClick={() => changeQty(item.product.id, -item.quantity)}><Trash2 size={15} /></button>
+                    <button aria-label={`Aumentar ${item.product.name}`} onClick={() => changeQty(item.product.id, 1)}><Plus size={15} /></button>
+                    <button aria-label={`Remover ${item.product.name}`} className="remove" onClick={() => changeQty(item.product.id, -item.quantity)}><Trash2 size={15} /></button>
                   </div>
                 </div>
               );
@@ -224,15 +234,24 @@ export function NewSalePage() {
           <div className="payment-section">
             <span className="field-label">Pagamento</span>
             <div className="payment-grid">
-              {(Object.keys(paymentLabels) as PaymentMethod[]).map((method) => (
+              {!mixed && (Object.keys(paymentLabels) as PaymentMethod[]).map((method) => (
                 <button key={method} className={paymentMethod === method ? "selected" : ""} onClick={() => setPaymentMethod(method)}>
                   {paymentLabels[method]}
                 </button>
               ))}
             </div>
 
+            <label className="toggle-field"><input type="checkbox" checked={mixed} onChange={e => setMixed(e.target.checked)} /><strong>Pagamento misto</strong></label>
+            {mixed && <div className="mixed-payments">
+              {(Object.keys(paymentLabels) as PaymentMethod[]).map(method => <label className="field" key={method}>
+                <span>{paymentLabels[method]} — parcela</span><input inputMode="decimal" value={split[method] || ""} onChange={e => setSplit(current => ({ ...current, [method]: e.target.value }))} />
+              </label>)}
+              <p className="muted">Falta distribuir: {formatCurrency(total - Object.values(split).reduce((sum,amount) => sum + previewCents(amount || ""),0))}</p>
+            </div>}
+            {hasCredit && <label className="field"><span>Vencimento do fiado (opcional)</span><input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} /></label>}
+
             <label className="field sale-customer-field">
-              <span>Cliente {paymentMethod === "CREDIT_CUSTOMER" ? "*" : "(opcional)"}</span>
+              <span>Cliente {hasCredit ? "*" : "(opcional)"}</span>
               <select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
                 <option value="">Selecione...</option>
                 {customers.map((customer) => (
@@ -241,7 +260,7 @@ export function NewSalePage() {
               </select>
             </label>
 
-            {paymentMethod === "CASH" && (
+            {cashAmount > 0 && (
               <>
                 <label className="field">
                   <span>Valor recebido</span>
@@ -251,7 +270,7 @@ export function NewSalePage() {
               </>
             )}
 
-            {paymentMethod === "CREDIT_CUSTOMER" && (
+            {hasCredit && (
               <div className="credit-notice">O valor será lançado automaticamente na caderneta do cliente.</div>
             )}
           </div>

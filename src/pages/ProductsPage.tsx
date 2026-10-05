@@ -8,13 +8,13 @@ import type { Product } from "../types/product";
 export function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [query, setQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   async function load() {
     setLoading(true);
-    await ensureDefaultCategories();
-    setProducts(await listProducts());
-    setLoading(false);
+    try { await ensureDefaultCategories(); setProducts(await listProducts()); }
+    catch(err) { setError(String(err)); } finally { setLoading(false); }
   }
 
   useEffect(() => {
@@ -52,6 +52,7 @@ export function ProductsPage() {
         </Link>
       </header>
 
+      {error && <div className="feedback error">{error}</div>}
       <div className="summary-strip">
         <div>
           <span>Produtos cadastrados</span>
@@ -123,11 +124,11 @@ export function ProductsPage() {
                         </span>
                       </td>
                       <td className="table-actions">
+                        <Link className="ghost-button" to={`/products/${product.id}/edit`}>Editar</Link>
                         <button
                           className="ghost-button"
                           onClick={async () => {
-                            await setProductActive(product.id, !Boolean(product.active));
-                            await load();
+                            try { await setProductActive(product.id, !Boolean(product.active)); await load(); } catch(err) { setError(String(err)); }
                           }}
                         >
                           {product.active ? "Desativar" : "Ativar"}

@@ -1,8 +1,8 @@
 import { ArrowLeft, Save } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ensureDefaultCategories } from "../lib/db";
-import { listCategories, saveProduct } from "../services/productService";
+import { getProduct, listCategories, saveCategory, saveProduct } from "../services/productService";
 import type { Category, ProductFormData } from "../types/product";
 
 const initialData: ProductFormData = {
@@ -20,6 +20,9 @@ const initialData: ProductFormData = {
 
 export function ProductFormPage() {
   const navigate = useNavigate();
+  const { productId } = useParams();
+  const [error, setError] = useState<string | null>(null);
+  const [categoryName, setCategoryName] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [form, setForm] = useState<ProductFormData>(initialData);
   const [saving, setSaving] = useState(false);
@@ -28,8 +31,12 @@ export function ProductFormPage() {
     void (async () => {
       await ensureDefaultCategories();
       setCategories(await listCategories());
-    })();
-  }, []);
+      if (productId) {
+        const p = await getProduct(productId); if (!p) throw new Error("Produto não encontrado.");
+        setForm({name:p.name, categoryId:p.category_id || "", sku:p.sku || "", description:p.description || "", costPrice:(p.cost_price_cents/100).toFixed(2), counterPrice:(p.counter_price_cents/100).toFixed(2), deliveryPrice:(p.delivery_price_cents/100).toFixed(2), stockQuantity:String(p.stock_quantity), minimumStock:String(p.minimum_stock), active:Boolean(p.active)});
+      }
+    })().catch(err => setError(String(err)));
+  }, [productId]);
 
   function update<K extends keyof ProductFormData>(key: K, value: ProductFormData[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -40,8 +47,10 @@ export function ProductFormPage() {
     if (!form.name.trim()) return;
 
     setSaving(true);
-    await saveProduct(form);
-    navigate("/products");
+    setError(null);
+    try { await saveProduct(form, productId); navigate("/products"); }
+    catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setSaving(false); }
   }
 
   return (
@@ -53,12 +62,20 @@ export function ProductFormPage() {
           </Link>
           <div>
             <p className="eyebrow">Produtos</p>
-            <h1>Novo produto</h1>
+            <h1>{productId ? "Editar produto" : "Novo produto"}</h1>
             <p className="muted">Preencha os dados usados nas vendas e no controle de estoque.</p>
           </div>
         </div>
       </header>
 
+      {error && <div className="feedback error" role="alert">{error}</div>}
+      <div className="panel"><label className="field"><span>Nova categoria</span><input value={categoryName} onChange={e => setCategoryName(e.target.value)} /></label>
+        <button className="secondary-button" disabled={!categoryName.trim() || saving} onClick={async () => {
+          setSaving(true); setError(null);
+          try { const id = await saveCategory(categoryName); setCategories(await listCategories()); update("categoryId", id); setCategoryName(""); }
+          catch (err) { setError(String(err)); } finally { setSaving(false); }
+        }}>Cadastrar categoria</button>
+      </div>
       <form onSubmit={submit}>
         <div className="form-section">
           <div className="form-section-heading">
@@ -114,16 +131,16 @@ export function ProductFormPage() {
         <div className="form-section">
           <div className="form-section-heading">
             <strong>Estoque</strong>
-            <span>Quantidade atual e ponto de alerta.</span>
+            <span>{productId ? "Altere quantidades pela tela Estoque para preservar o histórico." : "Quantidade inicial e ponto de alerta."}</span>
           </div>
           <div className="form-grid">
             <label className="field">
               <span>Quantidade atual</span>
-              <input type="number" step="0.01" value={form.stockQuantity} onChange={(e) => update("stockQuantity", e.target.value)} />
+              <input type="number" min="0" disabled={Boolean(productId)} step="0.01" value={form.stockQuantity} onChange={(e) => update("stockQuantity", e.target.value)} />
             </label>
             <label className="field">
               <span>Estoque mínimo</span>
-              <input type="number" step="0.01" value={form.minimumStock} onChange={(e) => update("minimumStock", e.target.value)} />
+              <input type="number" min="0" step="0.01" value={form.minimumStock} onChange={(e) => update("minimumStock", e.target.value)} />
             </label>
             <label className="toggle-field">
               <input type="checkbox" checked={form.active} onChange={(e) => update("active", e.target.checked)} />

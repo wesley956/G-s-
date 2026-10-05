@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { server } from './browser-harness.mjs';
-const require=createRequire(process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES ? process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES+'/' : import.meta.url);
-const {chromium}=require('playwright');
+const require=createRequire(process.env.GAS_PLAYWRIGHT_MODULE ? import.meta.url : process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES ? process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES+'/' : import.meta.url);
+const {chromium}=require(process.env.GAS_PLAYWRIGHT_MODULE || 'playwright');
 let browser;
 try {
  browser=await chromium.launch({executablePath:process.env.GAS_BROWSER_EXECUTABLE,headless:true,args:['--no-sandbox','--disable-gpu','--disable-dev-shm-usage']});

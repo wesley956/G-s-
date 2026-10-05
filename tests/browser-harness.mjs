@@ -1,9 +1,14 @@
 // UI-only harness: real SQLite, emulated Tauri IPC. Never imported by the app build.
 import { createServer } from "vite";
 import { resetDb } from "./sql-mock.mjs";
+import { nativeOperation } from "./native-bridge.mjs";
+import { rmSync, mkdirSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 
-const db = resetDb();
+mkdirSync("tmp", {recursive:true});
+const dbPath = "tmp/browser-test.db";
+rmSync(dbPath,{force:true});
+export const db = resetDb(dbPath);
 db.exec(`INSERT INTO cash_sessions (id,status,opening_balance_cents) VALUES ('cash','OPEN',10000);
   INSERT INTO products (id,name,counter_price_cents,delivery_price_cents,stock_quantity) VALUES ('gas','Gás P13',11000,12000,10);
   INSERT INTO products (id,name,counter_price_cents,delivery_price_cents,stock_quantity) VALUES ('water','Água mineral 20 litros',1000,1200,20);
@@ -30,9 +35,11 @@ export const server = await createServer({
       try {
         let body = ""; for await (const chunk of req) body += chunk;
         const { command, args } = JSON.parse(body); let value;
-        if (command === "plugin:sql|load") value = args.db;
+        if (command === "log_error") value = null;
+        else if (command === "plugin:sql|load") value = args.db;
         else if (command === "plugin:sql|select") value = db.prepare(args.query).all(...args.values);
         else if (command === "plugin:sql|execute") { const result = db.prepare(args.query).run(...args.values); value = [result.changes, Number(result.lastInsertRowid)]; }
+        else if (command === "write_operation") value = await nativeOperation(dbPath, args.operation);
         else if (command === "save_receipt_pdf") {
           await mkdir("tmp/pdfs", { recursive: true });
           const path = `tmp/pdfs/ui-sale-${args.saleNumber}.pdf`;

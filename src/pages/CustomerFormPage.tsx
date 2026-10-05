@@ -18,6 +18,7 @@ const initial: CustomerFormData = {
 export function CustomerFormPage() {
   const navigate = useNavigate();
   const [form, setForm] = useState(initial);
+  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   function update<K extends keyof CustomerFormData>(key: K, value: CustomerFormData[K]) {
@@ -28,8 +29,7 @@ export function CustomerFormPage() {
     event.preventDefault();
     if (!form.name.trim()) return;
     setSaving(true);
-    await saveCustomer(form);
-    navigate("/customers");
+    try { await saveCustomer(form); navigate("/customers"); } catch(err) { setError(String(err)); } finally { setSaving(false); }
   }
 
   return (
@@ -45,6 +45,7 @@ export function CustomerFormPage() {
         </div>
       </header>
 
+      {error && <div className="feedback error">{error}</div>}
       <form onSubmit={submit}>
         <div className="form-section">
           <div className="form-section-heading"><strong>Identificação</strong><span>Dados principais do cliente.</span></div>
