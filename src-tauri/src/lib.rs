@@ -118,6 +118,12 @@ pub fn run() {
             sql: include_str!("../migrations/0004_integrity.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 5,
+            description: "receipt_links_and_refunds",
+            sql: include_str!("../migrations/0005_receipt_refunds.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

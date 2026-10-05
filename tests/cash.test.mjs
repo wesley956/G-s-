@@ -12,3 +12,16 @@ test('PIX/card/credit reversals do not consume physical cash; cash reversal coun
  const result=await getCashSummary({id:'cash',opening_balance_cents:10000});
  assert.equal(result.expectedCashCents,10500);assert.equal(result.totalSalesCents,0);assert.equal(result.pixSalesCents,0);assert.equal(result.receiptPixCents,300);
 });
+test('receipt refunds reduce receipt totals without reducing sales and count cash once',async()=>{
+ const db=resetDb();db.exec("INSERT INTO cash_sessions(id,status,opening_balance_cents) VALUES ('cash','OPEN',10000); INSERT INTO customers(id,name) VALUES ('customer','José')");
+ for(const method of ['CASH','PIX','DEBIT_CARD','CREDIT_CARD']){
+  db.prepare("INSERT INTO customer_account_entries(id,customer_id,type,amount_cents,status) VALUES (?,'customer','PAYMENT',1000,'CANCELLED')").run(method);
+  db.prepare("INSERT INTO cash_transactions(id,cash_session_id,type,payment_method,amount_cents) VALUES (?,'cash','RECEIPT',?,1000)").run(`${method}-receipt`,method);
+  db.prepare("INSERT INTO cash_transactions(id,cash_session_id,type,payment_method,amount_cents) VALUES (?,'cash','REVERSAL',?,1000)").run(`${method}-refund`,method);
+  db.prepare('INSERT INTO account_payment_receipts VALUES (?,?)').run(method,`${method}-receipt`);
+  db.prepare('INSERT INTO account_payment_refunds(payment_id,cash_transaction_id,reason) VALUES (?,?,?)').run(method,`${method}-refund`,'Devolvido');
+ }
+ const result=await getCashSummary({id:'cash',opening_balance_cents:10000});
+ assert.equal(result.expectedCashCents,10000);assert.equal(result.totalSalesCents,0);assert.equal(result.cashSalesCents,0);assert.equal(result.pixSalesCents,0);
+ assert.equal(result.receiptCashCents,0);assert.equal(result.receiptPixCents,0);assert.equal(result.receiptDebitCents,0);assert.equal(result.receiptCreditCents,0);assert.equal(result.reversalsCents,1000);
+});

@@ -34,6 +34,7 @@ window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
   const response = await fetch('/__test_ipc', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({command,args}) });
   const result = await response.json(); if (result.error) throw new Error(result.error);
   if (command === 'write_operation' && args.operation.kind === 'RECEIVE' && window.__losePaymentResponseOnce) { window.__losePaymentResponseOnce=false; throw new Error('Resposta interrompida após gravar recebimento'); }
+  if (command === 'write_operation' && args.operation.kind === 'REFUND_RECEIPT' && window.__loseRefundResponseOnce) { window.__loseRefundResponseOnce=false; throw new Error('Resposta interrompida após gravar estorno'); }
   if (command === 'restore_backup' && result.value) location.reload();
   return result.value;
 } };

@@ -6,9 +6,9 @@ async fn connect(path: &std::path::Path)->SqlitePool {
 }
 async fn setup()->Fixture {
     let dir=tempfile::tempdir().unwrap();let pool=connect(&dir.path().join("test.db")).await;
-    for migration in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql")] {sqlx::raw_sql(migration).execute(&pool).await.unwrap();}
+    for migration in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql")] {sqlx::raw_sql(migration).execute(&pool).await.unwrap();}
     pool.execute("CREATE TABLE _sqlx_migrations(version BIGINT PRIMARY KEY,description TEXT,installed_on TEXT DEFAULT CURRENT_TIMESTAMP,success BOOLEAN,checksum BLOB,execution_time BIGINT)").await.unwrap();
-    for (index,migration) in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql")].iter().enumerate() {
+    for (index,migration) in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql")].iter().enumerate() {
         use sha2::{Digest,Sha384};
         sqlx::query("INSERT INTO _sqlx_migrations(version,description,success,checksum,execution_time) VALUES (?, 'test migration',1,?,0)").bind(index as i64+1).bind(Sha384::digest(migration.as_bytes()).to_vec()).execute(&pool).await.unwrap();
     }
@@ -17,6 +17,93 @@ async fn setup()->Fixture {
     pool.execute("INSERT INTO customers(id,name,phone) VALUES ('customer','José','123')").await.unwrap();Fixture{pool,dir}
 }
 fn operation(kind:&str,data:Value)->Operation {Operation{id:id(),kind:kind.into(),data}}
+async fn receive_id(pool:&SqlitePool,amount:i64,method:&str)->String {
+    apply(pool,operation("RECEIVE",json!({"customerId":"customer","amountCents":amount,"method":method}))).await.unwrap();
+    sqlx::query_scalar("SELECT id FROM customer_account_entries WHERE type='PAYMENT' AND status<>'CANCELLED' ORDER BY rowid DESC LIMIT 1").fetch_one(pool).await.unwrap()
+}
+fn refund(payment:&str)->Operation {operation("REFUND_RECEIPT",json!({"paymentId":payment,"customerId":"customer","reason":"Cliente recebeu devolução"}))}
+async fn balance(pool:&SqlitePool)->i64 {
+    sqlx::query_scalar("SELECT COALESCE(SUM(CASE WHEN status='CANCELLED' THEN 0 WHEN type='PAYMENT' THEN -amount_cents ELSE amount_cents END),0) FROM customer_account_entries").fetch_one(pool).await.unwrap()
+}
+#[tokio::test]
+async fn receipt_refund_preserves_allocations_reopens_credit_and_allows_cancel_once(){
+    let f=setup().await;let sale=apply(&f.pool,operation("SALE",input())).await.unwrap();
+    let first=receive_id(&f.pool,2000,"PIX").await;let second=receive_id(&f.pool,3000,"CASH").await;
+    assert_eq!(balance(&f.pool).await,0);
+    apply(&f.pool,refund(&first)).await.unwrap();assert_eq!(balance(&f.pool).await,2000);
+    assert_eq!(sqlx::query_scalar::<_,String>("SELECT status FROM customer_account_entries WHERE type='DEBIT'").fetch_one(&f.pool).await.unwrap(),"PARTIAL");
+    assert!(apply(&f.pool,operation("CANCEL_SALE",json!({"saleId":sale["saleId"],"reason":"Retorno"}))).await.is_err());
+    f.pool.execute("UPDATE customers SET active=0").await.unwrap();
+    apply(&f.pool,refund(&second)).await.unwrap();assert_eq!(balance(&f.pool).await,5000);
+    assert_eq!(sqlx::query_scalar::<_,String>("SELECT status FROM customer_account_entries WHERE type='DEBIT'").fetch_one(&f.pool).await.unwrap(),"OPEN");
+    assert_eq!(count(&f.pool,"account_payment_allocations").await,2);assert_eq!(stock_qty(&f.pool).await,9.0);
+    apply(&f.pool,operation("CANCEL_SALE",json!({"saleId":sale["saleId"],"reason":"Retorno"}))).await.unwrap();
+    assert_eq!(balance(&f.pool).await,0);assert_eq!(stock_qty(&f.pool).await,10.0);
+    assert!(apply(&f.pool,refund(&second)).await.is_err());
+}
+#[tokio::test]
+async fn receipt_refund_spanning_two_debts_keeps_other_receipts_and_new_fifo_valid(){
+    let f=setup().await;
+    f.pool.execute("INSERT INTO customer_account_entries(id,customer_id,type,amount_cents,status,created_at) VALUES ('older','customer','DEBIT',2000,'OPEN','2026-01-01'),('newer','customer','DEBIT',3000,'OPEN','2026-02-01')").await.unwrap();
+    let first=receive_id(&f.pool,4000,"PIX").await;let second=receive_id(&f.pool,1000,"CREDIT_CARD").await;
+    apply(&f.pool,refund(&first)).await.unwrap();
+    assert_eq!(balance(&f.pool).await,4000);
+    let rows:Vec<String>=sqlx::query_scalar("SELECT status FROM customer_account_entries WHERE type='DEBIT' ORDER BY created_at").fetch_all(&f.pool).await.unwrap();assert_eq!(rows,["OPEN","PARTIAL"]);
+    assert_eq!(sqlx::query_scalar::<_,String>("SELECT status FROM customer_account_entries WHERE id=?").bind(second).fetch_one(&f.pool).await.unwrap(),"PAID");
+    receive_id(&f.pool,4000,"DEBIT_CARD").await;assert_eq!(balance(&f.pool).await,0);
+    assert_eq!(count(&f.pool,"account_payment_allocations").await,5);
+}
+#[tokio::test]
+async fn receipt_refund_retry_concurrency_and_payload_reuse_are_safe(){
+    let f=setup().await;apply(&f.pool,operation("SALE",input())).await.unwrap();let payment=receive_id(&f.pool,2000,"PIX").await;
+    let op=refund(&payment);let (a,b)=tokio::join!(apply(&f.pool,op.clone()),apply(&f.pool,op.clone()));assert_eq!(a.unwrap(),b.unwrap());
+    let mut changed=op;changed.data["reason"]=json!("Outro motivo");assert!(apply(&f.pool,changed).await.is_err());
+    assert_eq!(count(&f.pool,"account_payment_refunds").await,1);
+    let payment=receive_id(&f.pool,2000,"CASH").await;
+    let (a,b)=tokio::join!(apply(&f.pool,refund(&payment)),apply(&f.pool,refund(&payment)));assert_eq!(usize::from(a.is_ok())+usize::from(b.is_ok()),1);
+    assert_eq!(count(&f.pool,"account_payment_refunds").await,2);assert_eq!(balance(&f.pool).await,5000);
+}
+#[tokio::test]
+async fn receipt_refund_failure_rolls_back_debts_cash_and_history(){
+    let f=setup().await;apply(&f.pool,operation("SALE",input())).await.unwrap();let payment=receive_id(&f.pool,2000,"CASH").await;
+    f.pool.execute("CREATE TRIGGER fail_refund BEFORE INSERT ON account_payment_refunds BEGIN SELECT RAISE(ABORT,'refund failed'); END").await.unwrap();
+    assert!(apply(&f.pool,refund(&payment)).await.unwrap_err().contains("refund failed"));
+    assert_eq!(balance(&f.pool).await,3000);assert_eq!(count(&f.pool,"account_payment_refunds").await,0);assert_eq!(count(&f.pool,"cash_transactions").await,3);
+    assert_eq!(sqlx::query_scalar::<_,String>("SELECT status FROM customer_account_entries WHERE type='PAYMENT'").fetch_one(&f.pool).await.unwrap(),"PAID");
+}
+#[tokio::test]
+async fn late_receipt_refund_uses_original_method_and_current_cash_without_reopening_old_cash(){
+    for method in ["CASH","PIX","DEBIT_CARD","CREDIT_CARD"] {
+        let f=setup().await;apply(&f.pool,operation("SALE",input())).await.unwrap();let payment=receive_id(&f.pool,2000,method).await;
+        let expected=if method=="CASH"{18000}else{16000};
+        apply(&f.pool,operation("CLOSE_CASH",json!({"sessionId":"cash","informedCents":expected}))).await.unwrap();
+        assert!(apply(&f.pool,refund(&payment)).await.is_err());
+        let current=apply(&f.pool,operation("OPEN_CASH",json!({"amountCents":3000}))).await.unwrap();
+        let result=apply(&f.pool,refund(&payment)).await.unwrap();assert_eq!(result["method"],method);assert_eq!(result["cashSessionId"],current);
+        assert_eq!(sqlx::query_scalar::<_,i64>("SELECT closing_expected_cents FROM cash_sessions WHERE id='cash'").fetch_one(&f.pool).await.unwrap(),expected);
+        assert_eq!(sqlx::query_scalar::<_,i64>("SELECT COUNT(*) FROM cash_transactions WHERE cash_session_id='cash'").fetch_one(&f.pool).await.unwrap(),3);
+        let mut tx=f.pool.begin_with("BEGIN IMMEDIATE").await.unwrap();assert_eq!(cash_expected(&mut tx,current.as_str().unwrap()).await.unwrap(),if method=="CASH"{1000}else{3000});tx.commit().await.unwrap();
+    }
+}
+#[tokio::test]
+async fn receipt_refund_rejects_insufficient_cash_wrong_customer_missing_reason_and_legacy_links(){
+    let f=setup().await;apply(&f.pool,operation("SALE",input())).await.unwrap();let payment=receive_id(&f.pool,2000,"CASH").await;
+    apply(&f.pool,operation("CASH_MOVE",json!({"sessionId":"cash","type":"WITHDRAWAL","amountCents":18000}))).await.unwrap();
+    assert!(apply(&f.pool,refund(&payment)).await.unwrap_err().contains("insuficiente"));
+    apply(&f.pool,operation("CASH_MOVE",json!({"sessionId":"cash","type":"SUPPLY","amountCents":2000}))).await.unwrap();
+    let mut bad=refund(&payment);bad.data["reason"]=json!("  ");assert!(apply(&f.pool,bad).await.is_err());
+    f.pool.execute("INSERT INTO customers(id,name) VALUES ('other','Outro')").await.unwrap();let mut bad=refund(&payment);bad.data["customerId"]=json!("other");assert!(apply(&f.pool,bad).await.is_err());
+    f.pool.execute("DELETE FROM account_payment_receipts").await.unwrap();assert!(apply(&f.pool,refund(&payment)).await.unwrap_err().contains("vínculo"));assert_eq!(balance(&f.pool).await,3000);
+}
+#[tokio::test]
+async fn restoration_accepts_known_v4_and_rejects_incomplete_v5_before_upgrade(){
+    let f=setup().await;let source=f.dir.path().join("old.sqlite");backup::snapshot(&f.pool,&source).await.unwrap();
+    let old=connect(&source).await;old.execute("DROP TABLE account_payment_refunds; DROP TABLE account_payment_receipts; DELETE FROM _sqlx_migrations WHERE version=5").await.unwrap();old.close().await;
+    backup::validate_restore(&source).await.unwrap();
+    recovery::prepare(&source,f.dir.path()).await.unwrap();
+    let broken=f.dir.path().join("broken.sqlite");backup::snapshot(&f.pool,&broken).await.unwrap();let damaged=connect(&broken).await;damaged.execute("DROP TABLE account_payment_refunds").await.unwrap();damaged.close().await;
+    assert!(backup::validate_restore(&broken).await.is_err());
+}
 fn input()->Value {json!({"saleType":"DELIVERY","customerId":"customer","discountCents":1000,"items":[{"productId":"product","quantity":1}],"payments":[{"method":"CASH","amountCents":6000,"receivedCents":10000},{"method":"CREDIT_CUSTOMER","amountCents":5000}],"dueDate":"2026-12-01"})}
 async fn count(pool:&SqlitePool,table:&str)->i64 {sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}")).fetch_one(pool).await.unwrap()}
 async fn stock_qty(pool:&SqlitePool)->f64 {sqlx::query_scalar("SELECT stock_quantity FROM products WHERE id='product'").fetch_one(pool).await.unwrap()}

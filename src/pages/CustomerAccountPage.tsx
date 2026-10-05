@@ -4,10 +4,12 @@ import { Link, useParams } from "react-router-dom";
 import { formatCurrency } from "../services/productService";
 import { addManualDebit, getCustomer, listAccountEntries, receiveCustomerPayment } from "../services/customerService";
 import type { AccountEntry, Customer } from "../types/customer";
+import { ReceiptRefundDialog, receiptMethodNames } from "../components/ReceiptRefundDialog";
 import type { PaymentMethod } from "../types/sale";
 
 export function CustomerAccountPage() {
   const { customerId = "" } = useParams();
+  const [refundEntry, setRefundEntry] = useState<AccountEntry | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [entries, setEntries] = useState<AccountEntry[]>([]);
   const [debitAmount, setDebitAmount] = useState("");
@@ -68,6 +70,7 @@ export function CustomerAccountPage() {
       {error && <div className="feedback error">{error}</div>}
       {feedback && <div className="feedback success">{feedback}</div>}
 
+      {refundEntry && <ReceiptRefundDialog entry={refundEntry} onClose={() => setRefundEntry(null)} onSuccess={() => { setRefundEntry(null); setFeedback("Recebimento estornado. Os débitos foram reabertos."); void load().catch(err => setError(String(err))); }} />}
       <div className="account-detail-grid">
         <form className="panel" onSubmit={submitDebit}>
           <div className="panel-heading-row"><div><p className="eyebrow">Cobrança</p><h2>Novo lançamento</h2></div><FilePlus2 size={20} className="muted" /></div>
@@ -91,16 +94,17 @@ export function CustomerAccountPage() {
         <div className="panel-heading-row"><div><p className="eyebrow">Histórico</p><h2>Movimentações da caderneta</h2></div></div>
         <div className="data-table-wrapper">
           <table className="data-table">
-            <thead><tr><th>Data</th><th>Descrição</th><th>Vencimento</th><th>Tipo</th><th>Situação</th><th>Valor</th><th>Em aberto</th></tr></thead>
+            <thead><tr><th>Data</th><th>Descrição</th><th>Vencimento</th><th>Tipo</th><th>Situação</th><th>Valor</th><th>Em aberto</th><th>Ação</th></tr></thead>
             <tbody>{entries.map((entry) => (
               <tr key={entry.id}>
                 <td>{new Date(entry.created_at).toLocaleString("pt-BR")}</td>
-                <td>{entry.description || "—"}</td>
+                <td>{entry.description || "—"}{entry.refund_reason && <small className="refund-history">Estornado: {entry.refund_reason} · {entry.refunded_at && new Date(entry.refunded_at).toLocaleString("pt-BR")}</small>}</td>
                 <td>{entry.due_date ? new Date(entry.due_date + "T12:00:00").toLocaleDateString("pt-BR") : "—"}</td>
-                <td>{entry.type === "PAYMENT" ? "Pagamento" : entry.sale_id ? "Venda fiado" : "Lançamento"}</td>
-                <td>{entry.status === "CANCELLED" ? "Cancelado" : entry.type === "PAYMENT" || entry.status === "PAID" ? "Quitado" : entry.status === "PARTIAL" ? "Parcial" : "Em aberto"}</td>
+                <td>{entry.type === "PAYMENT" ? `Pagamento · ${receiptMethodNames[entry.payment_method || ""] || "forma não vinculada"}` : entry.sale_id ? "Venda fiado" : "Lançamento"}</td>
+                <td>{entry.status === "CANCELLED" ? (entry.type === "PAYMENT" ? "Estornado" : "Cancelado") : entry.type === "PAYMENT" || entry.status === "PAID" ? "Quitado" : entry.status === "PARTIAL" ? "Parcial" : "Em aberto"}</td>
                 <td className={entry.type === "PAYMENT" ? "positive-text" : "warning-text"}>{entry.type === "PAYMENT" ? "- " : "+ "}{formatCurrency(entry.amount_cents)}</td>
                 <td>{entry.type === "PAYMENT" || entry.status === "CANCELLED" ? "—" : formatCurrency(entry.amount_cents - (entry.paid_cents || 0))}</td>
+                <td>{entry.type === "PAYMENT" && entry.status !== "CANCELLED" ? entry.receipt_transaction_id ? <button className="secondary-button" disabled={saving} onClick={() => setRefundEntry(entry)}>Estornar</button> : <span className="muted" title="Recebimento antigo sem vínculo direto ao caixa. Exige revisão do histórico.">Revisar histórico</span> : "—"}</td>
               </tr>
             ))}</tbody>
           </table>

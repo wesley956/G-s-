@@ -35,6 +35,10 @@ export type AccountEntry = {
   description: string | null;
   amount_cents: number;
   paid_cents: number;
+  payment_method: import("./sale").PaymentMethod | null;
+  receipt_transaction_id: string | null;
+  refund_reason: string | null;
+  refunded_at: string | null;
   due_date: string | null;
   status: string;
   attachment_path: string | null;

@@ -41,11 +41,11 @@ export async function addCashTransaction(input: {
 
 export async function getCashSummary(session: CashSession) {
   const db = await getDb();
-  const rows = await db.select<{ type: CashTransactionType; payment_method: string | null; total: number }[]>(
-    `SELECT type, payment_method, COALESCE(SUM(amount_cents), 0) AS total
+  const rows = await db.select<{ type: CashTransactionType; payment_method: string | null; total: number; receipt_refund: number }[]>(
+    `SELECT type, payment_method, EXISTS(SELECT 1 FROM account_payment_refunds r WHERE r.cash_transaction_id=cash_transactions.id) AS receipt_refund, COALESCE(SUM(amount_cents), 0) AS total
      FROM cash_transactions
      WHERE cash_session_id = ?
-     GROUP BY type, payment_method`,
+     GROUP BY type, payment_method, receipt_refund`,
     [session.id],
   );
 
@@ -89,6 +89,13 @@ export async function getCashSummary(session: CashSession) {
     if (row.type === "WITHDRAWAL") summary.withdrawalsCents += row.total;
     if (row.type === "EXPENSE") summary.expensesCents += row.total;
     if (row.type === "REVERSAL") {
+      if (row.receipt_refund) {
+        if (row.payment_method === "CASH") { summary.receiptCashCents -= row.total; summary.reversalsCents += row.total; }
+        if (row.payment_method === "PIX") summary.receiptPixCents -= row.total;
+        if (row.payment_method === "DEBIT_CARD") summary.receiptDebitCents -= row.total;
+        if (row.payment_method === "CREDIT_CARD") summary.receiptCreditCents -= row.total;
+        continue;
+      }
       // Only cash refunds reduce physical money. Reverse each payment total separately.
       summary.totalSalesCents -= row.total;
       if (row.payment_method === "CASH") { summary.cashSalesCents -= row.total; summary.reversalsCents += row.total; }
