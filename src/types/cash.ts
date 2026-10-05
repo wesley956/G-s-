@@ -2,6 +2,7 @@ export type CashStatus = "OPEN" | "CLOSED";
 
 export type CashTransactionType =
   | "SALE"
+  | "RECEIPT"
   | "SUPPLY"
   | "WITHDRAWAL"
   | "EXPENSE"
@@ -43,6 +44,10 @@ export type CashSummary = {
   debitSalesCents: number;
   creditSalesCents: number;
   customerCreditCents: number;
+  receiptCashCents: number;
+  receiptPixCents: number;
+  receiptDebitCents: number;
+  receiptCreditCents: number;
   suppliesCents: number;
   withdrawalsCents: number;
   expensesCents: number;
