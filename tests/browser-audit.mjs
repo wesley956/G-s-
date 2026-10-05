@@ -50,7 +50,7 @@ try {
  await page.getByRole('cell',{name:'Parcial',exact:true}).waitFor();
  await page.getByLabel(/Valor recebido/).fill('60,00');
  await page.getByRole('button',{name:'Registrar pagamento',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('.account-balance-box strong')?.textContent.includes('0,00'));
+ await page.waitForFunction(()=>document.querySelector('.account-balance-box strong')?.textContent.replace(/\s/g,'') === 'R$0,00');
  assert.equal(db.prepare("SELECT status FROM customer_account_entries WHERE type='DEBIT'").get().status,'PAID');
  await page.getByRole('link',{name:'Início',exact:true}).click();
  await page.getByText('R$ 110,00',{exact:true}).waitFor();

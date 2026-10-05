@@ -1,5 +1,5 @@
-pub mod backup;
 //! Domain writes run on one SQLx transaction. SQL and prices never come from the UI.
+pub mod backup;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{Row, Sqlite, Transaction};
