@@ -28,6 +28,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "msi"],
+    "icon": ["icons/icon.ico", "icons/icon.png"],
     "shortDescription": "Gestão offline de depósito",
     "longDescription": "Sistema desktop offline para vendas, estoque, caixa e clientes."
   }

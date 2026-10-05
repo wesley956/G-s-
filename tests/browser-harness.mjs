@@ -23,7 +23,7 @@ window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
   const result = await response.json(); if (result.error) throw new Error(result.error); return result.value;
 } };
 </script>`;
-const server = await createServer({
+export const server = await createServer({
   server: { host: "127.0.0.1", port: 1420, strictPort: true },
   plugins: [{ name: "receipt-test-bridge", transformIndexHtml: html => html.replace("<head>", `<head>${bridge}`),
     configureServer(vite) { vite.middlewares.use("/__test_ipc", async (req, res) => {

@@ -66,8 +66,15 @@ export function ReceiptDialog({ saleId, autoCopies, onClose }: Props) {
 
   useEffect(() => {
     if (receipt && autoCopies && !autoStarted.current) {
-      autoStarted.current = true;
-      void print();
+      let active = true;
+      // Keep flushSync outside React's effect stack; StrictMode may replay effects.
+      queueMicrotask(() => {
+        if (active && !autoStarted.current) {
+          autoStarted.current = true;
+          void print();
+        }
+      });
+      return () => { active = false; };
     }
   }, [receipt, autoCopies]);
 
