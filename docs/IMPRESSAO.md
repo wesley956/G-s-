@@ -77,4 +77,13 @@ homologar no desktop real:
 - Verificar cancelamento do diálogo e tentar novamente pelo histórico.
 - Testar `ASK`, `AUTO_ONE`, `AUTO_TWO` e `NEVER` sem conexão de internet.
 
+O roteiro `tests/browser-receipts.mjs` usa Playwright instalado no ambiente de teste.
+Executar `node tests/browser-receipts.mjs` (opcionalmente definir
+`GAS_BROWSER_EXECUTABLE` para um Chromium local). Verifica os quatro modos,
+troco/fiado, duas vias, PDF salvo/cancelado/falha, reimpressão e cancelamento.
+
+A issue #16 registra a necessidade de garantir transações na mesma conexão
+nativa: comandos `BEGIN`/instruções/`COMMIT` separados pelo pool não fornecem essa
+garantia. Resolver e validar esse bloqueador antes da liberação para o cliente.
+
 O comprovante é um documento interno não fiscal.
