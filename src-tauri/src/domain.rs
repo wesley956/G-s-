@@ -1,7 +1,9 @@
+pub mod backup;
 //! Domain writes run on one SQLx transaction. SQL and prices never come from the UI.
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::{Row, Sqlite, SqlitePool, Transaction};
+use sqlx::{Row, Sqlite, Transaction};
+pub use sqlx::SqlitePool;
 use std::collections::HashSet;
 
 type Tx = Transaction<'static, Sqlite>;
