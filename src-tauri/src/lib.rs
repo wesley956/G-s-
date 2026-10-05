@@ -19,8 +19,7 @@ async fn save_receipt_pdf(
             .set_file_name(format!("venda-{}.pdf", sale_number))
             .blocking_save_file();
         let Some(selected) = selected else { return Ok(None); };
-        let mut path = selected.into_path().map_err(|err| err.to_string())?;
-        if path.extension().is_none() { path.set_extension("pdf"); }
+        let path = selected.into_path().map_err(|err| err.to_string())?;
         if !path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| ext.eq_ignore_ascii_case("pdf")) {
             return Err("Escolha um arquivo com extensão .pdf.".into());
         }
