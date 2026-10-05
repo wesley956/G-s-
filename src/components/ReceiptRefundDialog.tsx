@@ -31,7 +31,7 @@ export function ReceiptRefundDialog({ entry, onClose, onSuccess }: { entry: Acco
       if (attempt.current?.signature !== signature) attempt.current = { signature, id: crypto.randomUUID() };
       await refundCustomerPayment({ customerId: entry.customer_id, paymentId: entry.id, reason: reason.trim(), operationId: attempt.current.id });
       onSuccess();
-    } catch (err) { setError(String(err)); }
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { busy.current = false; setSaving(false); }
   }
 
@@ -39,6 +39,7 @@ export function ReceiptRefundDialog({ entry, onClose, onSuccess }: { entry: Acco
     <form onSubmit={submit}>
       <p className="eyebrow">Devolução ao cliente</p><h2 id="refund-title">Estornar recebimento</h2>
       <p>Devolver <strong>{formatCurrency(entry.amount_cents)}</strong> por <strong>{receiptMethodNames[entry.payment_method || ""] || "forma desconhecida"}</strong>, registrando a saída no caixa aberto.</p>
+      {entry.payment_method !== "CASH" && <p>Faça a devolução no banco ou na operadora antes de confirmar. Esta tela registra a devolução na caderneta e no caixa.</p>}
       <p>O estorno devolve o recebimento inteiro e reabre os débitos abaixo. A venda e o estoque só mudam quando você cancelar a venda em Vendas.</p>
       {allocations ? <ul>{allocations.map((item, index) => <li key={index}>{item.description || "Lançamento"}: {formatCurrency(item.amount_cents)}</li>)}</ul> : <p>Carregando débitos afetados...</p>}
       <label className="field"><span>Motivo do estorno</span><textarea autoFocus required value={reason} disabled={saving} onChange={event => setReason(event.target.value)} /></label>

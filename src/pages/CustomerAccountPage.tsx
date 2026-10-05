@@ -1,3 +1,4 @@
+import { receiptDate } from "../lib/receipt";
 import { ArrowLeft, CircleDollarSign, FilePlus2 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -97,8 +98,8 @@ export function CustomerAccountPage() {
             <thead><tr><th>Data</th><th>Descrição</th><th>Vencimento</th><th>Tipo</th><th>Situação</th><th>Valor</th><th>Em aberto</th><th>Ação</th></tr></thead>
             <tbody>{entries.map((entry) => (
               <tr key={entry.id}>
-                <td>{new Date(entry.created_at).toLocaleString("pt-BR")}</td>
-                <td>{entry.description || "—"}{entry.refund_reason && <small className="refund-history">Estornado: {entry.refund_reason} · {entry.refunded_at && new Date(entry.refunded_at).toLocaleString("pt-BR")}</small>}</td>
+                <td>{receiptDate(entry.created_at)}</td>
+                <td>{entry.description || "—"}{entry.refund_reason && <small className="refund-history">Estornado: {entry.refund_reason} · {entry.refunded_at && receiptDate(entry.refunded_at)}</small>}</td>
                 <td>{entry.due_date ? new Date(entry.due_date + "T12:00:00").toLocaleDateString("pt-BR") : "—"}</td>
                 <td>{entry.type === "PAYMENT" ? `Pagamento · ${receiptMethodNames[entry.payment_method || ""] || "forma não vinculada"}` : entry.sale_id ? "Venda fiado" : "Lançamento"}</td>
                 <td>{entry.status === "CANCELLED" ? (entry.type === "PAYMENT" ? "Estornado" : "Cancelado") : entry.type === "PAYMENT" || entry.status === "PAID" ? "Quitado" : entry.status === "PARTIAL" ? "Parcial" : "Em aberto"}</td>
