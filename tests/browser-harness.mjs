@@ -12,6 +12,9 @@ rmSync(dbPath,{force:true});
 rmSync("tmp/browser-backups",{force:true,recursive:true});
 export let db = resetDb(dbPath);
 let restoreReport = null;
+// Each runner invocation is a process. Serialize schedule IPC like the desktop's
+// single backend and its SCHEDULE_LOCK, including React StrictMode startup calls.
+let scheduleQueue = Promise.resolve();
 db.exec(`INSERT INTO cash_sessions (id,status,opening_balance_cents) VALUES ('cash','OPEN',10000);
   INSERT INTO products (id,name,counter_price_cents,delivery_price_cents,stock_quantity) VALUES ('gas','Gás P13',11000,12000,10);
   INSERT INTO products (id,name,counter_price_cents,delivery_price_cents,stock_quantity) VALUES ('water','Água mineral 20 litros',1000,1200,20);
@@ -49,7 +52,10 @@ export const server = await createServer({
         else if (command === "create_backup") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"BACKUP_CREATE",data:{}});
         else if (command === "get_backup_policy") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"BACKUP_POLICY_GET",data:{}});
         else if (command === "set_backup_policy") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"BACKUP_POLICY_SET",data:args.policy});
-        else if (command === "check_backup_schedule") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"BACKUP_CHECK",data:{}});
+        else if (command === "check_backup_schedule") {
+          const check=scheduleQueue.then(()=>nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"BACKUP_CHECK",data:{}}));
+          scheduleQueue=check.catch(()=>{});value=await check;
+        }
         else if (command === "backup_status") value = {restoreReport,automaticError:null};
         else if (command === "restore_backup") {
           if (!args.backupId) {value=false;}

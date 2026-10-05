@@ -100,8 +100,12 @@ pub async fn apply_pending(directory: &Path) -> Result<Option<Report>> {
             if checkpoint.get::<i64,_>(0)!=0 {return Err("Banco ocupado. A restauração não foi aplicada.".into());}
             Ok(())
         }.await;
-        pool.close().await;result?;sync_directory(&directory.join("backups"))?;
-    } else {backup::validate_restore(&copy).await?;}
+        pool.close().await;
+        if let Err(error)=result {return reject(directory,format!("Não foi possível guardar a cópia preventiva: {error}"),&pending).await.map(Some);}
+        sync_directory(&directory.join("backups"))?;
+    } else if let Err(error)=backup::validate_restore(&copy).await {
+        return reject(directory,format!("A cópia preventiva está inválida: {error}"),&pending).await.map(Some);
+    }
     if !stage.exists() {
         // Process interrupted after installing the staged file, before cleanup.
         if let Err(error)=matches(&live,&pending).await {return reject(directory,error,&pending).await.map(Some);}

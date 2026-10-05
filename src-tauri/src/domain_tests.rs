@@ -218,3 +218,30 @@ async fn restoration_rejects_unsupported_migrations_without_touching_live_data()
     assert!(recovery::prepare(&source,f.dir.path()).await.is_err());assert_eq!(stock_qty(&f.pool).await,10.0);
     assert!(!f.dir.path().join("restore-pending.json").exists());
 }
+#[tokio::test]
+async fn invalid_preventive_copy_cancels_restore_without_replacing_current_database() {
+    let (f,_)=restoration_fixture().await;
+    let marker:Value=serde_json::from_slice(&std::fs::read(f.dir.path().join("restore-pending.json")).unwrap()).unwrap();
+    let dir=f.dir.path().join("backups");std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(marker["preventive_backup_id"].as_str().unwrap()),b"interrupted copy").unwrap();
+    let result=recovery::apply_pending(f.dir.path()).await.unwrap().unwrap();assert!(!result.restored);
+    let live=connect(&f.dir.path().join("deposito.db")).await;assert_eq!(stock_qty(&live).await,2.0);live.close().await;
+    assert!(!f.dir.path().join("restore-pending.json").exists());
+}
+#[tokio::test]
+async fn restoration_preventive_snapshot_recovers_committed_wal_after_process_loss() {
+    let f=setup().await;let source=f.dir.path().join("saved.sqlite");backup::snapshot(&f.pool,&source).await.unwrap();
+    // Model the disk image left by a killed process: the checkpointed main file
+    // and its committed WAL are copied while no transaction is running.
+    f.pool.execute("PRAGMA journal_mode=WAL").await.unwrap();
+    f.pool.execute("PRAGMA wal_autocheckpoint=0").await.unwrap();
+    f.pool.execute("UPDATE products SET stock_quantity=2").await.unwrap();
+    let recovery_dir=f.dir.path().join("crashed");std::fs::create_dir(&recovery_dir).unwrap();
+    std::fs::copy(f.dir.path().join("test.db"),recovery_dir.join("deposito.db")).unwrap();
+    std::fs::copy(f.dir.path().join("test.db-wal"),recovery_dir.join("deposito.db-wal")).unwrap();
+    f.pool.close().await;
+    recovery::prepare(&source,&recovery_dir).await.unwrap();
+    let report=recovery::apply_pending(&recovery_dir).await.unwrap().unwrap();assert!(report.restored);
+    let preventive=connect(&recovery_dir.join("backups").join(report.preventive_backup_id.unwrap())).await;assert_eq!(stock_qty(&preventive).await,2.0);preventive.close().await;
+    let live=connect(&recovery_dir.join("deposito.db")).await;assert_eq!(stock_qty(&live).await,10.0);live.close().await;
+}

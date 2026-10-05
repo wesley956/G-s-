@@ -67,6 +67,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          cache-on-failure: true
       - run: npm ci
       - run: npm run build
       - run: cargo check --manifest-path src-tauri/Cargo.toml

@@ -48,5 +48,12 @@
         "displayLanguageSelector": false
       }
     }
+  },
+  "plugins": {
+    "sql": {
+      "preload": [
+        "sqlite:deposito.db"
+      ]
+    }
   }
 }

@@ -14,7 +14,20 @@ export function BackupSettingsPage() {
     const [copies, savedPolicy] = await Promise.all([listBackups(), getBackupPolicy()]);
     setBackups(copies); setPolicy(savedPolicy);
   }
-  useEffect(() => { void load().catch(error => setError(String(error))); }, []);
+  useEffect(() => {
+    let active = true;
+    void Promise.all([listBackups(), getBackupPolicy()]).then(([copies, savedPolicy]) => {
+      if (active) { setBackups(copies); setPolicy(savedPolicy); }
+    }).catch(error => {
+      if (active) {
+        setError(String(error));
+        // Let the operator repair a malformed saved policy instead of leaving
+        // the form unavailable with an instruction to save it again.
+        setPolicy({ enabled: true, intervalHours: 24, retention: 7 });
+      }
+    });
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     if (restoring) recoveryDialog.current?.showModal();
     else recoveryDialog.current?.close();

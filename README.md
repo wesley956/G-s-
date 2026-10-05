@@ -57,9 +57,9 @@ Substituir controles em papel/caderno por um programa Windows simples, rápido e
 ## Status
 V1 em desenvolvimento, com PRs empilhados ainda não integrados à `main`.
 
-As issues #1–#7 têm implementação e correções de revisão no PR #17. O PR #18 inicia a #8 com backup manual, validação, retenção local e exportação. Consulte [a revisão](docs/REVISAO-V1.md) e [o estado do backup](docs/BACKUP.md).
+As issues #1–#7 têm implementação e correções de revisão no PR #17. Os PRs #18 e #19 implementam a #8: backup manual/automático, retenção, exportação, restauração preventiva e instaladores offline. Consulte [a revisão](docs/REVISAO-V1.md) e [o estado do backup](docs/BACKUP.md).
 
-Ainda pendentes: backup automático, restauração pelo aplicativo, instaladores Windows e homologação física de impressão/seletores. Fornecedores, relatórios e despesas completas continuam previstos; despesas avulsas já podem ser registradas pelo caixa.
+Ainda pendentes: integração dos PRs e homologação de instalação/upgrade, recuperação, impressão e seletores no equipamento do depósito. Fornecedores, relatórios e despesas completas continuam previstos; despesas avulsas já podem ser registradas pelo caixa.
 
 ## Desenvolvimento e verificação
 
@@ -84,4 +84,4 @@ node tests/browser-audit.mjs
 node tests/browser-backup.mjs
 ```
 
-Execute os roteiros um por vez. Eles usam SQLite em arquivo e o domínio Rust real, com impressão/seletor emulados. No Windows, informe `GAS_DOMAIN_RUNNER` com o caminho de `domain-runner.exe`. A CI executa testes nativos também no Windows, além do build do aplicativo.
+Execute os roteiros um por vez. Eles usam SQLite em arquivo e o domínio Rust real, com impressão/seletor emulados. No Windows, informe `GAS_DOMAIN_RUNNER` com o caminho de `domain-runner.exe`. A CI executa testes nativos também no Windows, além de gerar NSIS/MSI e testar a instalação NSIS, a abertura do aplicativo instalado e o backup automático.

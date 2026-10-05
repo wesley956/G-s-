@@ -13,5 +13,5 @@ export function exportBackup(id: string) { return command<string | null>('export
 export function getBackupPolicy() { return command<BackupPolicy>('get_backup_policy'); }
 export function setBackupPolicy(policy: BackupPolicy) { return command<void>('set_backup_policy', { policy }); }
 export function checkBackupSchedule() { return command<Backup | null>('check_backup_schedule'); }
-export function getBackupStatus() { return command<BackupStatus>('backup_status'); }
+export function getBackupStatus() { return invoke<BackupStatus>('backup_status'); }
 export function restoreBackup(backupId: string | null) { return command<boolean>('restore_backup', { backupId }); }
