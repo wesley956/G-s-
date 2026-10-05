@@ -279,7 +279,7 @@ export function CashRegisterPage() {
               <div><span>PIX</span><strong>{formatCurrency(summary.pixSalesCents)}</strong></div>
               <div><span>Débito</span><strong>{formatCurrency(summary.debitSalesCents)}</strong></div>
               <div><span>Crédito</span><strong>{formatCurrency(summary.creditSalesCents)}</strong></div>
-              <div><span>Fiado</span><strong>{formatCurrency(summary.customerCreditCents)}</strong></div>
+              <div><span>Fiado</span><strong>{formatCurrency(summary.customerCreditCents)}</strong></div>\n              <div><span>Recebimentos de caderneta</span><strong className="positive-text">{formatCurrency(summary.receiptCashCents + summary.receiptPixCents + summary.receiptDebitCents + summary.receiptCreditCents)}</strong></div>
               <div><span>Suprimentos</span><strong className="positive-text">+ {formatCurrency(summary.suppliesCents)}</strong></div>
               <div><span>Sangrias</span><strong className="danger-text">- {formatCurrency(summary.withdrawalsCents)}</strong></div>
               <div><span>Despesas</span><strong className="danger-text">- {formatCurrency(summary.expensesCents)}</strong></div>
@@ -310,8 +310,8 @@ export function CashRegisterPage() {
                         <td>{new Date(item.created_at).toLocaleTimeString("pt-BR")}</td>
                         <td>{typeLabels[item.type] ?? item.type}</td>
                         <td>{item.description || "—"}</td>
-                        <td className={item.type === "SUPPLY" || item.type === "SALE" ? "positive-text" : "danger-text"}>
-                          {item.type === "SUPPLY" || item.type === "SALE" ? "+" : "-"}{formatCurrency(item.amount_cents)}
+                        <td className={item.type === "SUPPLY" || item.type === "SALE" || item.type === "RECEIPT" ? "positive-text" : "danger-text"}>
+                          {item.type === "SUPPLY" || item.type === "SALE" || item.type === "RECEIPT" ? "+" : "-"}{formatCurrency(item.amount_cents)}
                         </td>
                       </tr>
                     ))}
