@@ -27,3 +27,12 @@ A revisão compara os requisitos das issues com o código acumulado dos PRs #9�
 - A devolução manual de estoque registra somente o retorno físico. Para devolver pagamento e anular venda, use o cancelamento da venda, evitando registrar o retorno duas vezes.
 - Automático significa abrir o diálogo do Windows; não significa impressão silenciosa. Impressora física e diálogo de PDF continuam pendentes de homologação no Windows.
 - Despesas avulsas são lançadas pelo caixa. Fornecedores, relatórios e o módulo completo de despesas ainda são telas reservadas e não fazem parte das issues #1–#7. O restante do escopo V1 não deve ser apresentado como concluído.
+
+## Resultado da rodada
+
+- 13 testes locais de valores, caixa e comprovantes aprovados.
+- 12 testes nativos de integridade aprovados.
+- Compilação Rust Windows aprovada na CI de 05/10/2026.
+- Roteiros de comprovantes e revisão funcional aprovados localmente com o executável Rust da CI; sem erros de console.
+- O roteiro encontrou uma corrida no carregamento da edição de produto que podia sobrescrever a digitação. O formulário agora espera a carga e descarta respostas de efeitos desmontados.
+- A CI anterior também detectou seletores incorretos no roteiro novo; foram corrigidos. A rodada final verifica o último commit completo.

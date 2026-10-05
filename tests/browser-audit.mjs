@@ -3,10 +3,10 @@ import { createRequire } from 'node:module';
 import { server, db } from './browser-harness.mjs';
 const require=createRequire(process.env.GAS_PLAYWRIGHT_MODULE ? import.meta.url : process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES ? process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES+'/' : import.meta.url);
 const { chromium }=require(process.env.GAS_PLAYWRIGHT_MODULE || 'playwright');
-let browser;
+let browser; let page;
 try {
  browser=await chromium.launch({executablePath:process.env.GAS_BROWSER_EXECUTABLE,headless:true,args:['--no-sandbox']});
- const page=await browser.newPage({viewport:{width:1366,height:900}});const errors=[];
+ page=await browser.newPage({viewport:{width:1366,height:900}});const errors=[];
  page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
  await page.goto('http://127.0.0.1:1420/#/sales/new');
  await page.getByRole('button',{name:/Gás P13/}).click();
@@ -40,7 +40,7 @@ try {
  await page.getByText('Estoque atualizado: 9 → 10',{exact:true}).waitFor();
  assert.equal(db.prepare("SELECT stock_quantity FROM products WHERE id='gas'").get().stock_quantity,10);
  await page.goto('http://127.0.0.1:1420/#/accounts/customer');
- await page.getByLabel('Valor',{exact:true}).fill('100,00');
+ await page.locator('form').first().getByLabel(/^Valor/).fill('100,00');
  await page.getByLabel('Descrição',{exact:true}).fill('Nota manual');
  await page.getByLabel('Vencimento',{exact:true}).fill('2026-12-01');
  await page.getByRole('button',{name:'Adicionar débito'}).click();
@@ -54,5 +54,6 @@ try {
  assert.equal(db.prepare("SELECT status FROM customer_account_entries WHERE type='DEBIT'").get().status,'PAID');
  await page.getByRole('link',{name:'Início',exact:true}).click();
  await page.getByText('R$ 110,00',{exact:true}).waitFor();
+ await page.screenshot({path:'tmp/pdfs/revisao-dashboard.png'});
  assert.deepEqual(errors,[]);console.log('PASS: mixed payment, change, category/product edit, stock return, partial payment, settlement, live dashboard; no console errors');
-} finally { await browser?.close(); await server.close(); }
+} catch(error) { console.error(await page?.locator("body").innerText()); throw error; } finally { await browser?.close(); await server.close(); }
