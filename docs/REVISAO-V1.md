@@ -17,7 +17,7 @@ A revisão compara os requisitos das issues com o código acumulado dos PRs #9�
 
 - Testes de valores/comprovantes e resumo de caixa usam SQLite real para leituras.
 - Testes financeiros executam o código Rust real com um pool de 3–5 conexões e banco em arquivo: falhas injetadas, concorrência, repetição da mesma operação, cancelamento, pagamentos parciais, reabertura e dados originais.
-- Roteiros de navegador usam o mesmo domínio Rust via executável de teste. Somente o diálogo de impressora e o seletor de PDF são emulados.
+- Roteiros de navegador usam o mesmo domínio Rust via executável de teste. Os diálogos de impressão e seletores de arquivos são emulados nos roteiros de navegador.
 - A CI verifica compilação Windows e publica o executável de teste para reprodução local.
 
 ## Regras e limites
@@ -26,7 +26,7 @@ A revisão compara os requisitos das issues com o código acumulado dos PRs #9�
 - Venda fiado que já recebeu pagamento é bloqueada para cancelamento simples. A issue #20 acrescenta estorno explícito na caderneta: devolve o recebimento inteiro, reabre os débitos e preserva as alocações históricas. O cancelamento só é liberado quando não houver recebimento ativo destinado à venda. Registros anteriores à migração 5 sem vínculo ao caixa exigem revisão; não são associados por data/descrição.
 - A devolução manual de estoque registra somente o retorno físico. Para devolver pagamento e anular venda, use o cancelamento da venda, evitando registrar o retorno duas vezes.
 - Automático significa abrir o diálogo do Windows; não significa impressão silenciosa. Impressora física e diálogo de PDF continuam pendentes de homologação no Windows.
-- Despesas avulsas são lançadas pelo caixa. Fornecedores, relatórios e o módulo completo de despesas ainda são telas reservadas e não fazem parte das issues #1–#7. O restante do escopo V1 não deve ser apresentado como concluído.
+- Nas rodadas posteriores, fornecedores (#22 / PR #23), despesas completas (#24 / PR #26) e relatórios (#25 / PR #27) receberam implementação. Consulte os documentos específicos de [fornecedores](FORNECEDORES.md), [despesas](DESPESAS.md) e [relatórios](RELATORIOS.md). A integração, a homologação e os itens ainda pendentes no [roadmap](ROADMAP.md) continuam separados da implementação.
 
 ## Resultado da rodada
 
