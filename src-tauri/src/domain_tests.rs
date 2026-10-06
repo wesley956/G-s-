@@ -105,6 +105,35 @@ async fn receipt_snapshot_keeps_original_names_and_prices(){
  let s=apply(&f.pool,operation("SALE",input())).await.unwrap();assert_eq!(s["printMode"],"AUTO_TWO");f.pool.execute("UPDATE customers SET name='Outro'; UPDATE products SET name='Outro',delivery_price_cents=99999; UPDATE app_settings SET value='{}'").await.unwrap();
  let stored:String=sqlx::query_scalar("SELECT snapshot_json FROM sale_receipt_snapshots").fetch_one(&f.pool).await.unwrap();let value:Value=serde_json::from_str(&stored).unwrap();assert_eq!(value["business"]["businessName"],"Loja original");assert_eq!(value["customer"]["name"],"José");assert_eq!(sqlx::query_scalar::<_,i64>("SELECT unit_price_cents FROM sale_items").fetch_one(&f.pool).await.unwrap(),12000);
 }
+#[tokio::test]
+async fn backup_is_consistent_and_reopens_without_source_wal(){
+ let f=setup().await;let s=apply(&f.pool,operation("SALE",input())).await.unwrap();let dir=f.dir.path().join("backups");
+ let copy=backup::create(&f.pool,&dir,7).await.unwrap();let path=backup::selected(&dir,&copy.id).unwrap();backup::validate(&path).await.unwrap();
+ apply(&f.pool,operation("CANCEL_SALE",json!({"saleId":s["saleId"],"reason":"Depois do backup"}))).await.unwrap();
+ let restored=connect(&path).await;assert_eq!(stock_qty(&restored).await,9.0);assert_eq!(count(&restored,"sales").await,1);assert_eq!(count(&restored,"sale_receipt_snapshots").await,1);
+ assert_eq!(sqlx::query_scalar::<_,String>("SELECT status FROM sales").fetch_one(&restored).await.unwrap(),"COMPLETED");restored.close().await;
+}
+#[tokio::test]
+async fn backup_excludes_uncommitted_writes(){
+ let f=setup().await;let mut tx=f.pool.begin_with("BEGIN IMMEDIATE").await.unwrap();exec(&mut tx,"UPDATE products SET stock_quantity=1 WHERE id='product'",vec![]).await.unwrap();
+ let copy=backup::create(&f.pool,&f.dir.path().join("backups"),7).await.unwrap();let restored=connect(&f.dir.path().join("backups").join(copy.id)).await;
+ assert_eq!(stock_qty(&restored).await,10.0);restored.close().await;tx.rollback().await.unwrap();assert_eq!(stock_qty(&f.pool).await,10.0);
+}
+#[tokio::test]
+async fn backup_retention_keeps_unknown_files_and_export_never_overwrites(){
+ let f=setup().await;let dir=f.dir.path().join("backups");std::fs::create_dir_all(&dir).unwrap();std::fs::write(dir.join("important.sqlite"),b"keep").unwrap();
+ let mut latest=None;for _ in 0..5 {latest=Some(backup::create(&f.pool,&dir,3).await.unwrap());}
+ assert_eq!(backup::list(&dir).unwrap().len(),3);assert_eq!(std::fs::read(dir.join("important.sqlite")).unwrap(),b"keep");
+ let source=backup::selected(&dir,&latest.unwrap().id).unwrap();let external=f.dir.path().join("external.sqlite");backup::export(&source,&external).unwrap();backup::validate(&external).await.unwrap();
+ let original=std::fs::read(&external).unwrap();assert!(backup::export(&source,&external).is_err());assert_eq!(std::fs::read(&external).unwrap(),original);
+ assert!(backup::selected(&dir,"../../deposito.db").is_err());
+}
+#[tokio::test]
+async fn corrupt_or_unrelated_backup_is_rejected_without_modifying_source(){
+ let f=setup().await;let bad=f.dir.path().join("bad.sqlite");std::fs::write(&bad,b"broken backup").unwrap();assert!(backup::validate(&bad).await.is_err());
+ let unrelated=f.dir.path().join("other.sqlite");let other=connect(&unrelated).await;other.execute("CREATE TABLE other(id TEXT)").await.unwrap();other.close().await;assert!(backup::validate(&unrelated).await.is_err());
+ assert_eq!(stock_qty(&f.pool).await,10.0);assert_eq!(count(&f.pool,"sales").await,0);
+}
 
 #[tokio::test]
 async fn inactive_customer_can_pay_existing_debt_but_cannot_start_new_credit(){

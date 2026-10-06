@@ -47,6 +47,11 @@ fn log_error(app: tauri::AppHandle, message: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn write_operation(app: tauri::AppHandle, operation: domain::Operation) -> Result<serde_json::Value, String> {
+    let pool = database_pool(&app).await?;
+    domain::apply(&pool, operation).await
+}
+
+async fn database_pool(app: &tauri::AppHandle) -> Result<domain::SqlitePool, String> {
     let instances = app.state::<tauri_plugin_sql::DbInstances>();
     let pool = {
         let lock = instances.0.read().await;
@@ -55,7 +60,32 @@ async fn write_operation(app: tauri::AppHandle, operation: domain::Operation) ->
             _ => return Err("Banco local não inicializado. Reabra o aplicativo.".into()),
         }
     };
-    domain::apply(&pool, operation).await
+    Ok(pool)
+}
+fn backup_directory(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(app.path().app_config_dir().map_err(|e|e.to_string())?.join("backups"))
+}
+#[tauri::command]
+async fn create_backup(app: tauri::AppHandle) -> Result<domain::backup::Backup, String> {
+    let pool = database_pool(&app).await?;
+    domain::backup::create(&pool, &backup_directory(&app)?, 7).await
+}
+#[tauri::command]
+fn list_backups(app: tauri::AppHandle) -> Result<Vec<domain::backup::Backup>, String> {
+    domain::backup::list(&backup_directory(&app)?)
+}
+#[tauri::command]
+async fn export_backup(app: tauri::AppHandle, backup_id: String) -> Result<Option<String>, String> {
+    let source = domain::backup::selected(&backup_directory(&app)?, &backup_id)?;
+    domain::backup::validate(&source).await?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let selected = app.dialog().file().add_filter("Backup SQLite", &["sqlite"])
+            .set_file_name(backup_id).blocking_save_file();
+        let Some(selected) = selected else { return Ok(None); };
+        let path = selected.into_path().map_err(|e|e.to_string())?;
+        domain::backup::export(&source,&path)?;
+        Ok(Some(path.to_string_lossy().into_owned()))
+    }).await.map_err(|e|e.to_string())?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -89,7 +119,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![save_receipt_pdf, write_operation, log_error])
+        .invoke_handler(tauri::generate_handler![save_receipt_pdf, write_operation, log_error, create_backup, list_backups, export_backup])
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:deposito.db", migrations)

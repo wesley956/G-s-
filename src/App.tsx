@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
+import { BackupSettingsPage } from "./pages/BackupSettingsPage";
 import { AccountsPage } from "./pages/AccountsPage";
 import { CashRegisterPage } from "./pages/CashRegisterPage";
 import { CustomerAccountPage } from "./pages/CustomerAccountPage";
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="/suppliers" element={<PlaceholderPage title="Fornecedores" />} />
         <Route path="/reports" element={<PlaceholderPage title="Relatórios" />} />
         <Route path="/settings" element={<Navigate to="/settings/printer" replace />} />
+        <Route path="/settings/backup" element={<BackupSettingsPage />} />
         <Route path="/settings/printer" element={<PrinterSettingsPage />} />
       </Route>
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

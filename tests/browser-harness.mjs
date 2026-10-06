@@ -8,6 +8,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 mkdirSync("tmp", {recursive:true});
 const dbPath = "tmp/browser-test.db";
 rmSync(dbPath,{force:true});
+rmSync("tmp/browser-backups",{force:true,recursive:true});
 export const db = resetDb(dbPath);
 db.exec(`INSERT INTO cash_sessions (id,status,opening_balance_cents) VALUES ('cash','OPEN',10000);
   INSERT INTO products (id,name,counter_price_cents,delivery_price_cents,stock_quantity) VALUES ('gas','Gás P13',11000,12000,10);
@@ -41,6 +42,14 @@ export const server = await createServer({
         else if (command === "plugin:sql|load") value = args.db;
         else if (command === "plugin:sql|select") value = db.prepare(args.query).all(...args.values);
         else if (command === "plugin:sql|execute") { const result = db.prepare(args.query).run(...args.values); value = [result.changes, Number(result.lastInsertRowid)]; }
+        else if (command === "create_backup") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"BACKUP_CREATE",data:{}});
+        else if (command === "list_backups") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"BACKUP_LIST",data:{}});
+        else if (command === "export_backup") {
+          await mkdir("tmp/exported",{recursive:true});
+          const { copyFile } = await import("node:fs/promises");
+          const path = `tmp/exported/${args.backupId}`;
+          await copyFile(`tmp/browser-backups/${args.backupId}`,path); value=path;
+        }
         else if (command === "write_operation") value = await nativeOperation(dbPath, args.operation);
         else if (command === "save_receipt_pdf") {
           await mkdir("tmp/pdfs", { recursive: true });

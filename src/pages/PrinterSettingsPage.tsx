@@ -28,7 +28,7 @@ export function PrinterSettingsPage() {
   return <section>
     <header className="page-header"><div><p className="eyebrow">Configurações</p><h1>Impressão e comprovantes</h1>
       <p className="muted">Defina os dados do depósito e o comportamento após cada venda.</p></div>
-      <Link to="/sales" className="secondary-button">Histórico de vendas</Link>
+      <Link to="/settings/backup" className="secondary-button">Backup dos dados</Link>
     </header>
     {error && <div role="alert" className="feedback error">{error}</div>}
     {feedback && <div role="status" className="feedback success">{feedback}</div>}

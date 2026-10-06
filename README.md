@@ -33,7 +33,7 @@ Substituir controles em papel/caderno por um programa Windows simples, rápido e
 4. Auditabilidade: vendas e movimentações importantes não são apagadas; são canceladas/estornadas com histórico.
 5. Evolução: arquitetura organizada para futura expansão sem reescrever o sistema do zero.
 
-## Tecnologias sugeridas
+## Tecnologias
 - Desktop: Tauri
 - Frontend: React + TypeScript
 - Banco local: SQLite
@@ -55,4 +55,33 @@ Substituir controles em papel/caderno por um programa Windows simples, rápido e
 - Configurações
 
 ## Status
-Projeto em definição e preparação da V1.
+V1 em desenvolvimento, com PRs empilhados ainda não integrados à `main`.
+
+As issues #1–#7 têm implementação e correções de revisão no PR #17. O PR #18 inicia a #8 com backup manual, validação, retenção local e exportação. Consulte [a revisão](docs/REVISAO-V1.md) e [o estado do backup](docs/BACKUP.md).
+
+Ainda pendentes: backup automático, restauração pelo aplicativo, instaladores Windows e homologação física de impressão/seletores. Fornecedores, relatórios e despesas completas continuam previstos; despesas avulsas já podem ser registradas pelo caixa.
+
+## Desenvolvimento e verificação
+
+Requisitos: Node.js 24, Rust estável e dependências do Tauri 2 para Windows (ferramentas MSVC e WebView2).
+
+```sh
+npm ci
+npm test
+npm run build
+cargo test --manifest-path src-tauri/domain/Cargo.toml
+npm run tauri -- dev
+```
+
+O navegador comum não possui acesso aos serviços nativos. Para os roteiros de interface, compile o executável de teste e instale Playwright temporariamente:
+
+```sh
+cargo build --manifest-path src-tauri/domain/Cargo.toml --bin domain-runner
+npm install --no-save --package-lock=false playwright
+npx playwright install chromium
+node tests/browser-receipts.mjs
+node tests/browser-audit.mjs
+node tests/browser-backup.mjs
+```
+
+Execute os roteiros um por vez. Eles usam SQLite em arquivo e o domínio Rust real, com impressão/seletor emulados. No Windows, informe `GAS_DOMAIN_RUNNER` com o caminho de `domain-runner.exe`. A CI executa testes nativos também no Windows, além do build do aplicativo.
