@@ -57,7 +57,7 @@ async fn audit_all_native_kinds_survive_backup_reopen_with_original_values(){
  apply(&f.pool,operation("STOCK",json!({"productId":"product","action":"ENTRY","quantity":2,"reason":"Reposição"}))).await.unwrap();
  apply(&f.pool,operation("DEBIT",json!({"customerId":"customer","amountCents":1001,"description":"Lançamento manual"}))).await.unwrap();
  let supplier=apply(&f.pool,operation("SUPPLIER",supplier_input())).await.unwrap();apply(&f.pool,operation("SUPPLIER_ACTIVE",json!({"id":supplier,"active":false}))).await.unwrap();
- let category=apply(&f.pool,operation("CATEGORY",json!({"name":"Água"}))).await.unwrap();apply(&f.pool,operation("PRODUCT",json!({"name":"Água nova","categoryId":category,"costPriceCents":101,"counterPriceCents":201,"deliveryPriceCents":301,"stockQuantity":4,"minimumStock":2,"active":true}))).await.unwrap();
+ let category=apply(&f.pool,operation("CATEGORY",json!({"name":"Categoria da auditoria"}))).await.unwrap();apply(&f.pool,operation("PRODUCT",json!({"name":"Água nova","categoryId":category,"costPriceCents":101,"counterPriceCents":201,"deliveryPriceCents":301,"stockQuantity":4,"minimumStock":2,"active":true}))).await.unwrap();
  let expense=apply(&f.pool,operation("EXPENSE",expense_input("CASH",101))).await.unwrap();apply(&f.pool,expense_refund(&expense,"cash")).await.unwrap();apply(&f.pool,operation("CASH_MOVE",json!({"sessionId":"cash","type":"SUPPLY","amountCents":1001,"description":"Troco"}))).await.unwrap();
  apply(&f.pool,operation("CLOSE_CASH",json!({"sessionId":"cash","informedCents":10001}))).await.unwrap();apply(&f.pool,operation("OPEN_CASH",json!({"amountCents":1001}))).await.unwrap();
  let page=audit::read(&f.pool,query()).await.unwrap();assert_eq!(page.total,15);
