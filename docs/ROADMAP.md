@@ -38,7 +38,7 @@ Os itens marcados têm implementação na cadeia de PRs, ainda não integrada à
 - [x] Fornecedores
 - [x] Relatórios
 - [x] Estoque mínimo
-- [ ] Dashboard final — faltam totais do dia por forma, vendas fiado e quantidade de clientes com saldo em aberto ([#28](https://github.com/wesley956/G-s-/issues/28))
+- [x] Dashboard final — indicadores reais, formas separadas, fiado e clientes com dívida; atualização e repetição ([#28](https://github.com/wesley956/G-s-/issues/28), `docs/DASHBOARD.md`)
 
 ## Fase 5 — Segurança operacional
 - [x] Backup manual

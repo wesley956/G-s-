@@ -57,7 +57,7 @@ try {
  await page.waitForFunction(()=>document.querySelector('.account-balance-box strong')?.textContent.replace(/\s/g,'') === 'R$0,00');
  assert.equal(db.prepare("SELECT status FROM customer_account_entries WHERE type='DEBIT'").get().status,'PAID');
  await page.getByRole('link',{name:'Início',exact:true}).click();
- await page.getByText('R$ 110,00',{exact:true}).waitFor();
+ await page.locator('.metric-card').filter({hasText:'Vendas hoje'}).getByText('R$ 110,00',{exact:true}).waitFor();
  await page.screenshot({path:'tmp/pdfs/revisao-dashboard.png'});
  assert.deepEqual(errors,[]);console.log('PASS: mixed payment, change, category/product edit, stock return, partial payment, settlement, live dashboard; no console errors');
 } catch(error) { console.error(await page?.locator("body").innerText()); throw error; } finally { await browser?.close(); await server.close(); }

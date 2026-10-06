@@ -67,6 +67,16 @@ jobs:
       - run: node tests/browser-reports.mjs
         env:
           GAS_PLAYWRIGHT_MODULE: playwright
+      - run: node tests/browser-dashboard.mjs
+        env:
+          GAS_PLAYWRIGHT_MODULE: playwright
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-evidence-${{ github.run_id }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: tmp/screenshots/
   windows-native:
     runs-on: windows-latest
     steps:
