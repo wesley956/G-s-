@@ -6,9 +6,9 @@ async fn connect(path: &std::path::Path)->SqlitePool {
 }
 async fn setup()->Fixture {
     let dir=tempfile::tempdir().unwrap();let pool=connect(&dir.path().join("test.db")).await;
-    for migration in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql"),include_str!("../migrations/0006_suppliers.sql")] {sqlx::raw_sql(migration).execute(&pool).await.unwrap();}
+    for migration in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql"),include_str!("../migrations/0006_suppliers.sql"),include_str!("../migrations/0007_expenses.sql")] {sqlx::raw_sql(migration).execute(&pool).await.unwrap();}
     pool.execute("CREATE TABLE _sqlx_migrations(version BIGINT PRIMARY KEY,description TEXT,installed_on TEXT DEFAULT CURRENT_TIMESTAMP,success BOOLEAN,checksum BLOB,execution_time BIGINT)").await.unwrap();
-    for (index,migration) in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql"),include_str!("../migrations/0006_suppliers.sql")].iter().enumerate() {
+    for (index,migration) in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql"),include_str!("../migrations/0006_suppliers.sql"),include_str!("../migrations/0007_expenses.sql")].iter().enumerate() {
         use sha2::{Digest,Sha384};
         sqlx::query("INSERT INTO _sqlx_migrations(version,description,success,checksum,execution_time) VALUES (?, 'test migration',1,?,0)").bind(index as i64+1).bind(Sha384::digest(migration.as_bytes()).to_vec()).execute(&pool).await.unwrap();
     }
@@ -53,7 +53,7 @@ async fn supplier_backup_reopens_contacts_and_known_v5_remains_restorable(){
     let f=setup().await;let op=operation("SUPPLIER",supplier_input());let supplier=apply(&f.pool,op.clone()).await.unwrap();
     let copy=f.dir.path().join("suppliers.sqlite");backup::snapshot(&f.pool,&copy).await.unwrap();backup::validate_restore(&copy).await.unwrap();
     let reopened=connect(&copy).await;assert_eq!(apply(&reopened,op).await.unwrap(),supplier);assert_eq!(sqlx::query_scalar::<_,String>("SELECT notes FROM suppliers").fetch_one(&reopened).await.unwrap(),"Entrega terça\nConfirmar pedido");
-    reopened.execute("DROP TABLE suppliers; DELETE FROM _sqlx_migrations WHERE version=6").await.unwrap();reopened.close().await;backup::validate_restore(&copy).await.unwrap();
+    reopened.execute("DROP TABLE expense_refunds; DROP TABLE expenses; DROP TABLE suppliers; DELETE FROM _sqlx_migrations WHERE version>5").await.unwrap();reopened.close().await;backup::validate_restore(&copy).await.unwrap();
     let broken=f.dir.path().join("broken-suppliers.sqlite");backup::snapshot(&f.pool,&broken).await.unwrap();let damaged=connect(&broken).await;damaged.execute("ALTER TABLE suppliers DROP COLUMN phone").await.unwrap();damaged.close().await;assert!(backup::validate_restore(&broken).await.is_err());
 }
 async fn receive_id(pool:&SqlitePool,amount:i64,method:&str)->String {
@@ -137,7 +137,7 @@ async fn receipt_refund_rejects_insufficient_cash_wrong_customer_missing_reason_
 #[tokio::test]
 async fn restoration_accepts_known_v4_and_rejects_incomplete_v5_before_upgrade(){
     let f=setup().await;let source=f.dir.path().join("old.sqlite");backup::snapshot(&f.pool,&source).await.unwrap();
-    let old=connect(&source).await;old.execute("DROP TABLE account_payment_refunds; DROP TABLE account_payment_receipts; DROP TABLE suppliers; DELETE FROM _sqlx_migrations WHERE version>4").await.unwrap();old.close().await;
+    let old=connect(&source).await;old.execute("DROP TABLE account_payment_refunds; DROP TABLE account_payment_receipts; DROP TABLE expense_refunds; DROP TABLE expenses; DROP TABLE suppliers; DELETE FROM _sqlx_migrations WHERE version>4").await.unwrap();old.close().await;
     backup::validate_restore(&source).await.unwrap();
     recovery::prepare(&source,f.dir.path()).await.unwrap();
     let broken=f.dir.path().join("broken.sqlite");backup::snapshot(&f.pool,&broken).await.unwrap();let damaged=connect(&broken).await;damaged.execute("DROP TABLE account_payment_refunds").await.unwrap();damaged.close().await;
@@ -370,4 +370,75 @@ async fn restoration_preventive_snapshot_recovers_committed_wal_after_process_lo
     let report=recovery::apply_pending(&recovery_dir).await.unwrap().unwrap();assert!(report.restored);
     let preventive=connect(&recovery_dir.join("backups").join(report.preventive_backup_id.unwrap())).await;assert_eq!(stock_qty(&preventive).await,2.0);preventive.close().await;
     let live=connect(&recovery_dir.join("deposito.db")).await;assert_eq!(stock_qty(&live).await,10.0);live.close().await;
+}
+fn expense_input(method:&str,amount:i64)->Value {json!({"sessionId":"cash","description":"  Conta d'água  ","category":"  Água  ","amountCents":amount,"method":method,"supplierId":null,"notes":"  Paga no balcão  "})}
+fn expense_refund(expense:&Value,session:&str)->Operation {operation("REFUND_EXPENSE",json!({"expenseId":expense,"sessionId":session,"reason":"Devolução recebida"}))}
+async fn expected(pool:&SqlitePool,session:&str)->i64 {let mut tx=pool.begin_with("BEGIN IMMEDIATE").await.unwrap();let result=cash_expected(&mut tx,session).await.unwrap();tx.rollback().await.unwrap();result}
+#[tokio::test]
+async fn expenses_and_refunds_only_change_physical_cash_for_cash_method(){
+ let f=setup().await;
+ for method in ["CASH","PIX","DEBIT_CARD","CREDIT_CARD"] {
+  let expense=apply(&f.pool,operation("EXPENSE",expense_input(method,1000))).await.unwrap();
+  assert_eq!(expected(&f.pool,"cash").await,9000);
+  if method!="CASH" {apply(&f.pool,expense_refund(&expense,"cash")).await.unwrap();assert_eq!(expected(&f.pool,"cash").await,9000);}
+ }
+ let cash:String=sqlx::query_scalar("SELECT e.id FROM expenses e JOIN cash_transactions t ON t.id=e.cash_transaction_id WHERE payment_method='CASH'").fetch_one(&f.pool).await.unwrap();
+ apply(&f.pool,expense_refund(&json!(cash),"cash")).await.unwrap();assert_eq!(expected(&f.pool,"cash").await,10000);
+ assert_eq!(count(&f.pool,"expenses").await,4);assert_eq!(count(&f.pool,"expense_refunds").await,4);assert_eq!(count(&f.pool,"cash_transactions").await,8);
+ let close=apply(&f.pool,operation("CLOSE_CASH",json!({"sessionId":"cash","informedCents":10000}))).await.unwrap();assert_eq!(close["differenceCents"],0);
+}
+#[tokio::test]
+async fn expense_replay_concurrent_spending_and_changed_payload_cannot_duplicate_or_overdraw(){
+ let f=setup().await;let op=operation("EXPENSE",expense_input("CASH",6000));
+ let (a,b)=tokio::join!(apply(&f.pool,op.clone()),apply(&f.pool,op.clone()));assert_eq!(a.unwrap(),b.unwrap());assert_eq!(count(&f.pool,"expenses").await,1);assert_eq!(expected(&f.pool,"cash").await,4000);
+ let mut changed=op;changed.data["amountCents"]=json!(5000);assert!(apply(&f.pool,changed).await.unwrap_err().contains("outros dados"));
+ let (a,b)=tokio::join!(apply(&f.pool,operation("EXPENSE",expense_input("CASH",3000))),apply(&f.pool,operation("EXPENSE",expense_input("CASH",3000))));assert_eq!(usize::from(a.is_ok())+usize::from(b.is_ok()),1);assert_eq!(expected(&f.pool,"cash").await,1000);
+}
+#[tokio::test]
+async fn expense_validation_supplier_snapshot_and_inactive_history_are_safe(){
+ let f=setup().await;
+ for (key,value) in [("amountCents",json!(0)),("amountCents",json!(1.5)),("amountCents",json!(1000000000001i64)),("method",json!("CREDIT_CUSTOMER")),("description",json!(" ")),("description",json!("x".repeat(241))),("category",json!("")),("notes",json!("x\u{0}")),("notes",json!("x".repeat(4001))),("supplierId",json!(12)),("supplierId",json!("missing")),("sessionId",json!("stale"))] {
+  let mut v=expense_input("PIX",1000);v[key]=value;assert!(apply(&f.pool,operation("EXPENSE",v)).await.is_err(),"{key}");
+ }
+ assert_eq!(count(&f.pool,"expenses").await,0);assert_eq!(count(&f.pool,"cash_transactions").await,0);
+ let supplier=apply(&f.pool,operation("SUPPLIER",supplier_input())).await.unwrap();let mut v=expense_input("PIX",1234);v["supplierId"]=supplier.clone();let expense=apply(&f.pool,operation("EXPENSE",v.clone())).await.unwrap();
+ apply(&f.pool,operation("SUPPLIER_ACTIVE",json!({"id":supplier,"active":false}))).await.unwrap();assert!(apply(&f.pool,operation("EXPENSE",v)).await.is_err());
+ f.pool.execute("UPDATE suppliers SET name='Nome alterado'").await.unwrap();let row=sqlx::query("SELECT supplier_name_snapshot,notes FROM expenses").fetch_one(&f.pool).await.unwrap();assert_eq!(row.get::<String,_>("supplier_name_snapshot"),"Águas São João");assert_eq!(row.get::<String,_>("notes"),"Paga no balcão");
+ apply(&f.pool,expense_refund(&expense,"cash")).await.unwrap();assert_eq!(expected(&f.pool,"cash").await,10000);
+}
+#[tokio::test]
+async fn expense_and_refund_operation_history_failures_roll_back_all_writes(){
+ let f=setup().await;f.pool.execute("CREATE TRIGGER fail_expense BEFORE INSERT ON operation_results BEGIN SELECT RAISE(ABORT,'forced failure'); END").await.unwrap();
+ assert!(apply(&f.pool,operation("EXPENSE",expense_input("CASH",1234))).await.is_err());assert_eq!(count(&f.pool,"expenses").await,0);assert_eq!(count(&f.pool,"cash_transactions").await,0);
+ f.pool.execute("DROP TRIGGER fail_expense").await.unwrap();let expense=apply(&f.pool,operation("EXPENSE",expense_input("CASH",1234))).await.unwrap();
+ f.pool.execute("CREATE TRIGGER fail_expense_refund BEFORE INSERT ON operation_results BEGIN SELECT RAISE(ABORT,'forced failure'); END").await.unwrap();
+ assert!(apply(&f.pool,expense_refund(&expense,"cash")).await.is_err());assert_eq!(count(&f.pool,"expense_refunds").await,0);assert_eq!(count(&f.pool,"cash_transactions").await,1);assert_eq!(expected(&f.pool,"cash").await,8766);
+}
+#[tokio::test]
+async fn late_expense_refund_preserves_closed_cash_and_concurrent_cancel_is_once(){
+ let f=setup().await;let expense=apply(&f.pool,operation("EXPENSE",expense_input("CASH",1234))).await.unwrap();
+ apply(&f.pool,operation("CLOSE_CASH",json!({"sessionId":"cash","informedCents":8766}))).await.unwrap();assert!(apply(&f.pool,expense_refund(&expense,"cash")).await.is_err());
+ let current=apply(&f.pool,operation("OPEN_CASH",json!({"amountCents":0}))).await.unwrap();let session=current.as_str().unwrap();let op=expense_refund(&expense,session);
+ let (a,b)=tokio::join!(apply(&f.pool,op.clone()),apply(&f.pool,expense_refund(&expense,session)));assert_eq!(usize::from(a.is_ok())+usize::from(b.is_ok()),1);
+ assert_eq!(expected(&f.pool,session).await,1234);assert_eq!(sqlx::query_scalar::<_,i64>("SELECT closing_expected_cents FROM cash_sessions WHERE id='cash'").fetch_one(&f.pool).await.unwrap(),8766);
+ assert_eq!(count(&f.pool,"expense_refunds").await,1);assert_eq!(count(&f.pool,"cash_transactions").await,2);
+ let replay=operation("EXPENSE",expense_input("PIX",500));let v=apply(&f.pool,replay.clone()).await.unwrap();let refund=expense_refund(&v,session);apply(&f.pool,refund.clone()).await.unwrap();apply(&f.pool,operation("CLOSE_CASH",json!({"sessionId":session,"informedCents":1234}))).await.unwrap();apply(&f.pool,refund).await.unwrap();assert_eq!(count(&f.pool,"expense_refunds").await,2);
+}
+#[tokio::test]
+async fn expense_migration_backfills_legacy_without_new_outflows_and_legacy_api_stays_visible(){
+ let f=setup().await;f.pool.execute("DROP TABLE expense_refunds; DROP TABLE expenses; DELETE FROM _sqlx_migrations WHERE version=7").await.unwrap();
+ f.pool.execute("INSERT INTO cash_transactions(id,cash_session_id,type,amount_cents,description,created_at) VALUES ('old','cash','EXPENSE',500,'Histórico antigo','2026-01-01 10:00:00')").await.unwrap();
+ f.pool.execute("UPDATE cash_sessions SET status='CLOSED',closing_expected_cents=9500,closing_informed_cents=9500,closed_at=CURRENT_TIMESTAMP").await.unwrap();
+ let old=f.dir.path().join("known-v6.sqlite");backup::snapshot(&f.pool,&old).await.unwrap();backup::validate_restore(&old).await.unwrap();
+ sqlx::raw_sql(include_str!("../migrations/0007_expenses.sql")).execute(&f.pool).await.unwrap();assert_eq!(count(&f.pool,"cash_transactions").await,1);
+ let row=sqlx::query("SELECT e.origin,t.created_at FROM expenses e JOIN cash_transactions t ON t.id=e.cash_transaction_id WHERE e.id='old'").fetch_one(&f.pool).await.unwrap();assert_eq!(row.get::<String,_>("origin"),"LEGACY");assert_eq!(row.get::<String,_>("created_at"),"2026-01-01 10:00:00");
+ let cash=apply(&f.pool,operation("OPEN_CASH",json!({"amountCents":1000}))).await.unwrap();let session=cash.as_str().unwrap();apply(&f.pool,expense_refund(&json!("old"),session)).await.unwrap();assert_eq!(expected(&f.pool,session).await,1500);
+ apply(&f.pool,operation("CASH_MOVE",json!({"sessionId":session,"type":"EXPENSE","amountCents":250,"description":"Nova avulsa"}))).await.unwrap();assert_eq!(count(&f.pool,"expenses").await,2);assert_eq!(expected(&f.pool,session).await,1250);
+ assert_eq!(sqlx::query_scalar::<_,i64>("SELECT closing_expected_cents FROM cash_sessions WHERE id='cash'").fetch_one(&f.pool).await.unwrap(),9500);
+}
+#[tokio::test]
+async fn expense_backup_reopens_history_replay_and_rejects_incomplete_v7(){
+ let f=setup().await;let op=operation("EXPENSE",expense_input("PIX",999));let expense=apply(&f.pool,op.clone()).await.unwrap();apply(&f.pool,expense_refund(&expense,"cash")).await.unwrap();
+ let copy=f.dir.path().join("expenses.sqlite");backup::snapshot(&f.pool,&copy).await.unwrap();backup::validate_restore(&copy).await.unwrap();let reopened=connect(&copy).await;assert_eq!(apply(&reopened,op).await.unwrap(),expense);assert_eq!(count(&reopened,"expense_refunds").await,1);reopened.close().await;
+ let damaged=connect(&copy).await;damaged.execute("ALTER TABLE expenses DROP COLUMN notes").await.unwrap();damaged.close().await;assert!(backup::validate_restore(&copy).await.unwrap_err().contains("expenses.notes"));
 }

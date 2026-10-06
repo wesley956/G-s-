@@ -15,6 +15,8 @@ import { SalesPage } from "./pages/SalesPage";
 import { PrinterSettingsPage } from "./pages/PrinterSettingsPage";
 import { SuppliersPage } from "./pages/SuppliersPage";
 import { SupplierFormPage } from "./pages/SupplierFormPage";
+import { ExpensesPage } from "./pages/ExpensesPage";
+import { ExpenseFormPage } from "./pages/ExpenseFormPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import "./styles/receipt.css";
 
@@ -34,7 +36,8 @@ export default function App() {
         <Route path="/accounts" element={<AccountsPage />} />
         <Route path="/accounts/:customerId" element={<CustomerAccountPage />} />
         <Route path="/cash" element={<CashRegisterPage />} />
-        <Route path="/expenses" element={<PlaceholderPage title="Despesas" />} />
+        <Route path="/expenses" element={<ExpensesPage />} />
+        <Route path="/expenses/new" element={<ExpenseFormPage />} />
         <Route path="/suppliers" element={<SuppliersPage />} />
         <Route path="/suppliers/new" element={<SupplierFormPage />} />
         <Route path="/suppliers/:supplierId/edit" element={<SupplierFormPage />} />

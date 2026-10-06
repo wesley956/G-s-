@@ -14,8 +14,8 @@ As gravações usam o domínio Rust na mesma transação do registro da operaç�
 
 O backend confere campos obrigatórios, tipos, situação, limites de tamanho e formato básico do e-mail. CPF/CNPJ e telefone são informações de contato; não há consulta externa ou validação cadastral governamental.
 
-A migração 6 cria `suppliers` sem alterar as migrações anteriores. Backup inclui identificação, contatos, observações e situação. Restauração aceita bancos completos das versões 4, 5 ou 6, com seus checksums conhecidos; bancos antigos recebem as migrações necessárias antes do uso. Versões futuras e schema incompleto permanecem bloqueados.
+A migração 6 cria `suppliers` sem alterar as migrações anteriores. Backup inclui identificação, contatos, observações e situação. Restauração aceita bancos completos das versões 4, 5, 6 ou 7, com seus checksums conhecidos; bancos antigos recebem as migrações necessárias antes do uso. Versões futuras e schema incompleto permanecem bloqueados.
 
-Esta entrega é de cadastro. Compras, vínculo com despesas e contas a pagar continuam fora deste módulo. Integração da cadeia de PRs e homologação no depósito permanecem pendentes.
+Esta entrega é de cadastro. O módulo de despesas (#24) permite vincular pagamentos a fornecedores ativos e mantém o nome do fornecedor no histórico, inclusive após renomear ou desativar. Compras e contas a pagar continuam fora desta entrega. Integração da cadeia de PRs e homologação no depósito permanecem pendentes.
 
 Verificação: testes nativos de criação/edição, repetição concorrente, situação, validação, rollback e backup reaberto; roteiro de interface com backend Rust real para falha de resposta, busca por acentos, edição, filtros, recarga e restauração; teste Windows com restauração de banco v4 e reinstalação preservando o fornecedor.

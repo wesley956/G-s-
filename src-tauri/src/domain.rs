@@ -3,6 +3,7 @@ pub mod backup;
 pub mod backup_policy;
 pub mod recovery;
 mod suppliers;
+mod expenses;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{Row, Sqlite, Transaction};
@@ -66,7 +67,7 @@ fn settings_text(settings: &Value, key: &str, default: &str, limit: usize) -> St
     settings.get(key).and_then(Value::as_str).unwrap_or(default).trim().chars().take(limit).collect()
 }
 async fn cash_expected(tx: &mut Tx, session: &str) -> Result<i64> {
-    sqlx::query_scalar("SELECT opening_balance_cents + COALESCE((SELECT SUM(CASE WHEN type IN ('SALE','RECEIPT') AND payment_method='CASH' THEN amount_cents WHEN type='SUPPLY' THEN amount_cents WHEN type IN ('WITHDRAWAL','EXPENSE') THEN -amount_cents WHEN type='REVERSAL' AND payment_method='CASH' THEN -amount_cents ELSE 0 END) FROM cash_transactions WHERE cash_session_id=cash_sessions.id),0) FROM cash_sessions WHERE id=?")
+    sqlx::query_scalar("SELECT opening_balance_cents + COALESCE((SELECT SUM(CASE WHEN type IN ('SALE','RECEIPT') AND payment_method='CASH' THEN amount_cents WHEN type='SUPPLY' AND (payment_method IS NULL OR payment_method='CASH') THEN amount_cents WHEN type='WITHDRAWAL' THEN -amount_cents WHEN type='EXPENSE' AND (payment_method IS NULL OR payment_method='CASH') THEN -amount_cents WHEN type='REVERSAL' AND payment_method='CASH' THEN -amount_cents ELSE 0 END) FROM cash_transactions WHERE cash_session_id=cash_sessions.id),0) FROM cash_sessions WHERE id=?")
     .bind(session).fetch_one(&mut **tx).await.map_err(|e|e.to_string())
 }
 
@@ -91,6 +92,8 @@ async fn dispatch(tx: &mut Tx, kind: &str, v: &Value) -> Result<Value> {
         "SALE"=>sale(tx,v).await, "CANCEL_SALE"=>cancel_sale(tx,v).await,
         "STOCK"=>stock(tx,v).await, "RECEIVE"=>receive(tx,v).await,
         "REFUND_RECEIPT"=>refund_receipt(tx,v).await,
+        "EXPENSE"=>expenses::save(tx,v).await,
+        "REFUND_EXPENSE"=>expenses::refund(tx,v).await,
         "OPEN_CASH"=>{
             let amount=money(v,"amountCents",true)?;
             if sqlx::query_scalar::<_,i64>("SELECT COUNT(*) FROM cash_sessions WHERE status='OPEN'").fetch_one(&mut **tx).await.map_err(|e|e.to_string())?>0 {return Err("Já existe um caixa aberto.".into());}
@@ -101,6 +104,7 @@ async fn dispatch(tx: &mut Tx, kind: &str, v: &Value) -> Result<Value> {
             let typ=text(v,"type")?;if !["SUPPLY","WITHDRAWAL","EXPENSE"].contains(&typ){return Err("Movimento inválido.".into());}
             let amount=money(v,"amountCents",false)?;
             if typ!="SUPPLY" && amount>cash_expected(tx,session).await? {return Err("Saldo em dinheiro insuficiente.".into());}
+            if typ=="EXPENSE" {return expenses::legacy(tx,session,amount,optional(v,"description")).await;}
             exec(tx,"INSERT INTO cash_transactions(id,cash_session_id,type,amount_cents,description) VALUES (?,?,?,?,?)",vec![json!(id()),json!(session),json!(typ),json!(amount),json!(optional(v,"description"))]).await?;Ok(Value::Null)
         },
         "CLOSE_CASH"=>{

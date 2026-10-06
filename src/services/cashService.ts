@@ -23,7 +23,7 @@ export async function openCashRegister(openingBalance: string, notes: string) {
 export async function listCashTransactions(sessionId: string) {
   const db = await getDb();
   return db.select<CashTransaction[]>(
-    `SELECT * FROM cash_transactions
+    `SELECT cash_transactions.*, EXISTS(SELECT 1 FROM expense_refunds er WHERE er.cash_transaction_id=cash_transactions.id) AS expense_refund FROM cash_transactions
      WHERE cash_session_id = ?
      ORDER BY created_at DESC`,
     [sessionId],
@@ -41,11 +41,11 @@ export async function addCashTransaction(input: {
 
 export async function getCashSummary(session: CashSession) {
   const db = await getDb();
-  const rows = await db.select<{ type: CashTransactionType; payment_method: string | null; total: number; receipt_refund: number }[]>(
-    `SELECT type, payment_method, EXISTS(SELECT 1 FROM account_payment_refunds r WHERE r.cash_transaction_id=cash_transactions.id) AS receipt_refund, COALESCE(SUM(amount_cents), 0) AS total
+  const rows = await db.select<{ type: CashTransactionType; payment_method: string | null; total: number; receipt_refund: number; expense_refund: number }[]>(
+    `SELECT type, payment_method, EXISTS(SELECT 1 FROM account_payment_refunds r WHERE r.cash_transaction_id=cash_transactions.id) AS receipt_refund, EXISTS(SELECT 1 FROM expense_refunds er WHERE er.cash_transaction_id=cash_transactions.id) AS expense_refund, COALESCE(SUM(amount_cents), 0) AS total
      FROM cash_transactions
      WHERE cash_session_id = ?
-     GROUP BY type, payment_method, receipt_refund`,
+     GROUP BY type, payment_method, receipt_refund, expense_refund`,
     [session.id],
   );
 
@@ -63,6 +63,7 @@ export async function getCashSummary(session: CashSession) {
     suppliesCents: 0,
     withdrawalsCents: 0,
     expensesCents: 0,
+    cashExpensesCents: 0, pixExpensesCents: 0, debitExpensesCents: 0, creditExpensesCents: 0,
     reversalsCents: 0,
     expectedCashCents: session.opening_balance_cents,
     totalSalesCents: 0,
@@ -85,9 +86,17 @@ export async function getCashSummary(session: CashSession) {
       if (row.payment_method === "CREDIT_CARD") summary.receiptCreditCents += row.total;
     }
 
+    if (row.type === "EXPENSE" || row.expense_refund) {
+      const total = row.expense_refund ? -row.total : row.total;
+      summary.expensesCents += total;
+      if (!row.payment_method || row.payment_method === "CASH") summary.cashExpensesCents += total;
+      if (row.payment_method === "PIX") summary.pixExpensesCents += total;
+      if (row.payment_method === "DEBIT_CARD") summary.debitExpensesCents += total;
+      if (row.payment_method === "CREDIT_CARD") summary.creditExpensesCents += total;
+      continue;
+    }
     if (row.type === "SUPPLY") summary.suppliesCents += row.total;
     if (row.type === "WITHDRAWAL") summary.withdrawalsCents += row.total;
-    if (row.type === "EXPENSE") summary.expensesCents += row.total;
     if (row.type === "REVERSAL") {
       if (row.receipt_refund) {
         if (row.payment_method === "CASH") { summary.receiptCashCents -= row.total; summary.reversalsCents += row.total; }
@@ -112,7 +121,7 @@ export async function getCashSummary(session: CashSession) {
     summary.receiptCashCents +
     summary.suppliesCents -
     summary.withdrawalsCents -
-    summary.expensesCents;
+    summary.cashExpensesCents;
 
   return summary;
 }

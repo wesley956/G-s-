@@ -37,6 +37,8 @@ window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
   if (command === 'write_operation' && args.operation.kind === 'REFUND_RECEIPT' && window.__loseRefundResponseOnce) { window.__loseRefundResponseOnce=false; throw new Error('Resposta interrompida após gravar estorno'); }
   if (command === 'write_operation' && args.operation.kind === 'SUPPLIER' && window.__loseSupplierResponseOnce) { window.__loseSupplierResponseOnce=false; throw new Error('Resposta interrompida após gravar fornecedor'); }
   if (command === 'write_operation' && args.operation.kind === 'SUPPLIER_ACTIVE' && window.__loseSupplierStatusResponseOnce) { window.__loseSupplierStatusResponseOnce=false; throw new Error('Resposta interrompida após alterar fornecedor'); }
+  if (command === 'write_operation' && args.operation.kind === 'EXPENSE' && window.__loseExpenseResponseOnce) { window.__loseExpenseResponseOnce=false; throw new Error('Resposta interrompida após gravar despesa'); }
+  if (command === 'write_operation' && args.operation.kind === 'REFUND_EXPENSE' && window.__loseExpenseRefundResponseOnce) { window.__loseExpenseRefundResponseOnce=false; throw new Error('Resposta interrompida após cancelar despesa'); }
   if (command === 'restore_backup' && result.value) location.reload();
   return result.value;
 } };

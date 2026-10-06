@@ -7,6 +7,8 @@ import {
   WalletCards,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { paymentLabels } from "../lib/receipt";
 import { previewCents } from "../lib/money";
 import { receiptDate } from "../lib/receipt";
 import { formatCurrency } from "../services/productService";
@@ -35,6 +37,7 @@ const emptySummary: CashSummary = {
   suppliesCents: 0,
   withdrawalsCents: 0,
   expensesCents: 0,
+  cashExpensesCents: 0, pixExpensesCents: 0, debitExpensesCents: 0, creditExpensesCents: 0,
   reversalsCents: 0,
   expectedCashCents: 0,
   totalSalesCents: 0,
@@ -56,7 +59,7 @@ export function CashRegisterPage() {
   const [history, setHistory] = useState<CashSession[]>([]);
   const [openingBalance, setOpeningBalance] = useState("");
   const [openingNotes, setOpeningNotes] = useState("");
-  const [movementType, setMovementType] = useState<"SUPPLY" | "WITHDRAWAL" | "EXPENSE">("SUPPLY");
+  const [movementType, setMovementType] = useState<"SUPPLY" | "WITHDRAWAL">("SUPPLY");
   const [movementAmount, setMovementAmount] = useState("");
   const [movementDescription, setMovementDescription] = useState("");
   const [closingAmount, setClosingAmount] = useState("");
@@ -298,7 +301,11 @@ export function CashRegisterPage() {
               <div><span>Caderneta — crédito</span><strong>{formatCurrency(summary.receiptCreditCents)}</strong></div>
               <div><span>Suprimentos</span><strong className="positive-text">+ {formatCurrency(summary.suppliesCents)}</strong></div>
               <div><span>Sangrias</span><strong className="danger-text">- {formatCurrency(summary.withdrawalsCents)}</strong></div>
-              <div><span>Despesas</span><strong className="danger-text">- {formatCurrency(summary.expensesCents)}</strong></div>
+              <div><span>Despesas — dinheiro</span><strong>{formatCurrency(summary.cashExpensesCents)}</strong></div>
+              <div><span>Despesas — PIX</span><strong>{formatCurrency(summary.pixExpensesCents)}</strong></div>
+              <div><span>Despesas — débito</span><strong>{formatCurrency(summary.debitExpensesCents)}</strong></div>
+              <div><span>Despesas — crédito</span><strong>{formatCurrency(summary.creditExpensesCents)}</strong></div>
+              <p className="muted">Despesas líquidas das devoluções neste caixa. Valores negativos indicam devoluções recebidas.</p>
               <div className="cash-total-row"><span>Esperado em dinheiro</span><strong>{formatCurrency(summary.expectedCashCents)}</strong></div>
             </div>
           </div>
@@ -318,14 +325,15 @@ export function CashRegisterPage() {
               <div className="data-table-wrapper">
                 <table className="data-table">
                   <thead>
-                    <tr><th>Hora</th><th>Tipo</th><th>Descrição</th><th>Valor</th></tr>
+                    <tr><th>Hora</th><th>Tipo</th><th>Descrição</th><th>Forma</th><th>Valor</th></tr>
                   </thead>
                   <tbody>
                     {transactions.map((item) => (
                       <tr key={item.id}>
-                        <td>{new Date(item.created_at).toLocaleTimeString("pt-BR")}</td>
-                        <td>{typeLabels[item.type] ?? item.type}</td>
+                        <td>{receiptDate(item.created_at)}</td>
+                        <td>{item.expense_refund ? "Devolução de despesa" : typeLabels[item.type] ?? item.type}</td>
                         <td>{item.description || "—"}</td>
+                        <td>{item.payment_method ? paymentLabels[item.payment_method] : "Dinheiro"}</td>
                         <td className={item.type === "SUPPLY" || item.type === "SALE" || item.type === "RECEIPT" ? "positive-text" : "danger-text"}>
                           {item.type === "SUPPLY" || item.type === "SALE" || item.type === "RECEIPT" ? "+" : "-"}{formatCurrency(item.amount_cents)}
                         </td>
@@ -355,9 +363,7 @@ export function CashRegisterPage() {
               <button type="button" className={movementType === "WITHDRAWAL" ? "selected" : ""} onClick={() => setMovementType("WITHDRAWAL")}>
                 <ArrowUpFromLine size={17} /> Sangria
               </button>
-              <button type="button" className={movementType === "EXPENSE" ? "selected" : ""} onClick={() => setMovementType("EXPENSE")}>
-                <ReceiptText size={17} /> Despesa
-              </button>
+              <Link className="secondary-button" to="/expenses/new"><ReceiptText size={17} /> Despesa</Link>
             </div>
 
             <label className="field">
