@@ -1,6 +1,6 @@
 # Roadmap
 
-Os itens marcados têm implementação na cadeia de PRs, ainda não integrada à `main`. Integração e homologação no equipamento do depósito são etapas separadas.
+Os itens marcados têm implementação integrada à `main` em 06/10/2026. Homologação no equipamento do depósito permanece uma etapa separada, acompanhada na [issue #32](https://github.com/wesley956/G-s-/issues/32) e no [roteiro de homologação](HOMOLOGACAO.md).
 
 ## Fase 0 — Fundação
 - [x] Inicializar Tauri + React + TypeScript
@@ -50,6 +50,6 @@ Os itens marcados têm implementação na cadeia de PRs, ainda não integrada à
 
 ## Integração e homologação
 
-- [ ] Integrar os PRs empilhados na ordem das dependências
+- [x] Integrar os 16 PRs empilhados na ordem das dependências, preservando histórico e conferindo a árvore de cada entrega
 - [ ] Homologar instalação/upgrade e recuperação no equipamento do depósito
 - [ ] Homologar impressora física e seletores de PDF, backup e CSV

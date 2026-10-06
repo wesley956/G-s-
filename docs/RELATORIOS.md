@@ -30,4 +30,4 @@ Testes do domínio cobrem pagamentos mistos, desconto, recebimento parcial e dev
 
 `node tests/browser-reports.mjs` usa o mesmo domínio Rust do aplicativo e SQLite em arquivo. Verifica limites em America/Sao_Paulo, as seis seções, exportação com cancelamento/falha/sucesso, CSV parseável com textos adversos, consultas sem alterações financeiras e recuperação dos dados. A impressão e os seletores são emulados nos roteiros de navegador. A CI conserva os outros seis roteiros e os testes de instalador Windows.
 
-Os PRs permanecem empilhados até a integração. A operação do seletor e a abertura do CSV no aplicativo de planilha instalado ainda precisam de homologação no equipamento do depósito.
+Os PRs foram integrados à main em 06/10/2026. A operação do seletor e a abertura do CSV no aplicativo de planilha instalado ainda precisam de homologação no equipamento do depósito.
