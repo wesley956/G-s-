@@ -1,5 +1,5 @@
 import { ArrowLeft, CircleDollarSign, FilePlus2 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { formatCurrency } from "../services/productService";
 import { addManualDebit, getCustomer, listAccountEntries, receiveCustomerPayment } from "../services/customerService";
@@ -15,6 +15,9 @@ export function CustomerAccountPage() {
   const [dueDate, setDueDate] = useState("");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("PIX");
+  const busy = useRef(false);
+  const paymentAttempt = useRef<{signature:string; id:string} | null>(null);
+  const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,7 +27,7 @@ export function CustomerAccountPage() {
     setEntries(entryRows);
   }
 
-  useEffect(() => { void load(); }, [customerId]);
+  useEffect(() => { void load().catch(err => setError(String(err))); }, [customerId]);
 
   const balance = useMemo(() => entries.reduce((sum, entry) => {
     if (entry.status === "CANCELLED") return sum;
@@ -32,22 +35,25 @@ export function CustomerAccountPage() {
   }, 0), [entries]);
 
   async function submitDebit(event: FormEvent) {
-    event.preventDefault(); setError(null); setFeedback(null);
+    event.preventDefault(); if (busy.current) return; busy.current = true; setSaving(true); setError(null); setFeedback(null);
     try {
       await addManualDebit({ customerId, description: debitDescription, amount: debitAmount, dueDate });
       setDebitAmount(""); setDebitDescription(""); setDueDate(""); setFeedback("Lançamento adicionado."); await load();
-    } catch (err) { setError(err instanceof Error ? err.message : "Não foi possível lançar."); }
+    } catch (err) { setError(err instanceof Error ? err.message : "Não foi possível lançar."); } finally { busy.current = false; setSaving(false); }
   }
 
   async function submitPayment(event: FormEvent) {
-    event.preventDefault(); setError(null); setFeedback(null);
+    event.preventDefault(); if (busy.current) return; busy.current = true; setSaving(true); setError(null); setFeedback(null);
     try {
-      await receiveCustomerPayment({ customerId, amount: paymentAmount, method: paymentMethod, description: "Pagamento de caderneta" });
+      const signature = JSON.stringify({customerId, paymentAmount, paymentMethod});
+      if (paymentAttempt.current?.signature !== signature) paymentAttempt.current = {signature, id:crypto.randomUUID()};
+      await receiveCustomerPayment({ customerId, amount: paymentAmount, method: paymentMethod, description: "Pagamento de caderneta", operationId: paymentAttempt.current.id });
+      paymentAttempt.current = null;
       setPaymentAmount(""); setFeedback("Pagamento registrado com sucesso."); await load();
-    } catch (err) { setError(err instanceof Error ? err.message : "Não foi possível receber."); }
+    } catch (err) { setError(err instanceof Error ? err.message : "Não foi possível receber."); } finally { busy.current = false; setSaving(false); }
   }
 
-  if (!customer) return <section><p className="muted">Carregando cliente...</p></section>;
+  if (!customer) return <section>{error ? <div className="feedback error">{error}</div> : <p className="muted">Carregando cliente...</p>}</section>;
 
   return (
     <section>
@@ -68,7 +74,7 @@ export function CustomerAccountPage() {
           <label className="field"><span>Descrição</span><input value={debitDescription} onChange={(e) => setDebitDescription(e.target.value)} placeholder="Ex.: Nota de água - outubro" /></label>
           <label className="field"><span>Valor</span><div className="money-input"><span>R$</span><input value={debitAmount} onChange={(e) => setDebitAmount(e.target.value)} inputMode="decimal" required /></div></label>
           <label className="field"><span>Vencimento</span><input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></label>
-          <button className="secondary-button cash-main-button">Adicionar débito</button>
+          <button disabled={saving} className="secondary-button cash-main-button">Adicionar débito</button>
         </form>
 
         <form className="panel" onSubmit={submitPayment}>
@@ -77,7 +83,7 @@ export function CustomerAccountPage() {
           <label className="field"><span>Forma de pagamento</span><select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}>
             <option value="CASH">Dinheiro</option><option value="PIX">PIX</option><option value="DEBIT_CARD">Débito</option><option value="CREDIT_CARD">Crédito</option>
           </select></label>
-          <button className="primary-button cash-main-button" disabled={balance <= 0}>Registrar pagamento</button>
+          <button className="primary-button cash-main-button" disabled={saving || balance <= 0}>Registrar pagamento</button>
         </form>
       </div>
 
@@ -85,14 +91,16 @@ export function CustomerAccountPage() {
         <div className="panel-heading-row"><div><p className="eyebrow">Histórico</p><h2>Movimentações da caderneta</h2></div></div>
         <div className="data-table-wrapper">
           <table className="data-table">
-            <thead><tr><th>Data</th><th>Descrição</th><th>Vencimento</th><th>Tipo</th><th>Valor</th></tr></thead>
+            <thead><tr><th>Data</th><th>Descrição</th><th>Vencimento</th><th>Tipo</th><th>Situação</th><th>Valor</th><th>Em aberto</th></tr></thead>
             <tbody>{entries.map((entry) => (
               <tr key={entry.id}>
                 <td>{new Date(entry.created_at).toLocaleString("pt-BR")}</td>
                 <td>{entry.description || "—"}</td>
                 <td>{entry.due_date ? new Date(entry.due_date + "T12:00:00").toLocaleDateString("pt-BR") : "—"}</td>
                 <td>{entry.type === "PAYMENT" ? "Pagamento" : entry.sale_id ? "Venda fiado" : "Lançamento"}</td>
+                <td>{entry.status === "CANCELLED" ? "Cancelado" : entry.type === "PAYMENT" || entry.status === "PAID" ? "Quitado" : entry.status === "PARTIAL" ? "Parcial" : "Em aberto"}</td>
                 <td className={entry.type === "PAYMENT" ? "positive-text" : "warning-text"}>{entry.type === "PAYMENT" ? "- " : "+ "}{formatCurrency(entry.amount_cents)}</td>
+                <td>{entry.type === "PAYMENT" || entry.status === "CANCELLED" ? "—" : formatCurrency(entry.amount_cents - (entry.paid_cents || 0))}</td>
               </tr>
             ))}</tbody>
           </table>

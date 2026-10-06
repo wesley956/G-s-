@@ -1,11 +1,8 @@
+import { writeOperation } from "../lib/operations";
+import { toCents } from "../lib/money";
 import { getDb } from "../lib/db";
 import type { AccountEntry, Customer, CustomerFormData } from "../types/customer";
 import type { PaymentMethod } from "../types/sale";
-
-function toCents(value: string) {
-  const normalized = value.replace(/\./g, "").replace(",", ".").trim();
-  return Math.round(Number(normalized || 0) * 100);
-}
 
 export async function listCustomers() {
   const db = await getDb();
@@ -45,6 +42,7 @@ export async function getCustomer(id: string) {
 
 export async function saveCustomer(data: CustomerFormData) {
   const db = await getDb();
+  if (!data.name.trim()) throw new Error("Informe o nome do cliente.");
   const id = crypto.randomUUID();
 
   await db.execute(
@@ -81,7 +79,7 @@ export async function listAccountEntries(customerId?: string) {
   const params = customerId ? [customerId] : [];
 
   return db.select<AccountEntry[]>(
-    `SELECT a.*, c.name AS customer_name
+    `SELECT a.*, c.name AS customer_name, COALESCE((SELECT SUM(amount_cents) FROM account_payment_allocations WHERE debit_id=a.id),0) AS paid_cents
      FROM customer_account_entries a
      INNER JOIN customers c ON c.id = a.customer_id
      ${where}
@@ -96,90 +94,10 @@ export async function addManualDebit(input: {
   amount: string;
   dueDate: string;
 }) {
-  const db = await getDb();
-  const amountCents = toCents(input.amount);
-  if (amountCents <= 0) throw new Error("Informe um valor maior que zero.");
-
-  await db.execute(
-    `INSERT INTO customer_account_entries
-      (id, customer_id, type, description, amount_cents, due_date, status)
-     VALUES (?, ?, 'DEBIT', ?, ?, ?, 'OPEN')`,
-    [
-      crypto.randomUUID(),
-      input.customerId,
-      input.description.trim() || "Lançamento manual",
-      amountCents,
-      input.dueDate || null,
-    ],
-  );
+  return writeOperation("DEBIT", { ...input, amountCents: toCents(input.amount) });
 }
-
 export async function receiveCustomerPayment(input: {
-  customerId: string;
-  amount: string;
-  method: PaymentMethod;
-  description: string;
+  customerId: string; amount: string; method: PaymentMethod; description: string; operationId?: string;
 }) {
-  const db = await getDb();
-  const amountCents = toCents(input.amount);
-  if (amountCents <= 0) throw new Error("Informe um valor maior que zero.");
-
-  const balanceRows = await db.select<{ balance: number }[]>(
-    `SELECT COALESCE(SUM(
-      CASE
-        WHEN status = 'CANCELLED' THEN 0
-        WHEN type IN ('DEBIT','ADJUSTMENT') THEN amount_cents
-        WHEN type = 'PAYMENT' THEN -amount_cents
-        ELSE 0
-      END
-    ), 0) AS balance
-    FROM customer_account_entries
-    WHERE customer_id = ?`,
-    [input.customerId],
-  );
-
-  const currentBalance = balanceRows[0]?.balance ?? 0;
-  if (amountCents > currentBalance) {
-    throw new Error("O pagamento não pode ser maior que o saldo em aberto.");
-  }
-
-  const cashRows = await db.select<{ id: string }[]>(
-    "SELECT id FROM cash_sessions WHERE status = 'OPEN' ORDER BY opened_at DESC LIMIT 1",
-  );
-  const cashSessionId = cashRows[0]?.id;
-  if (!cashSessionId) throw new Error("Abra o caixa antes de receber um pagamento.");
-
-  await db.execute("BEGIN IMMEDIATE");
-  try {
-    const entryId = crypto.randomUUID();
-    await db.execute(
-      `INSERT INTO customer_account_entries
-        (id, customer_id, type, description, amount_cents, status)
-       VALUES (?, ?, 'PAYMENT', ?, ?, 'PAID')`,
-      [
-        entryId,
-        input.customerId,
-        input.description.trim() || "Pagamento de caderneta",
-        amountCents,
-      ],
-    );
-
-    await db.execute(
-      `INSERT INTO cash_transactions
-        (id, cash_session_id, type, payment_method, amount_cents, description)
-       VALUES (?, ?, 'RECEIPT', ?, ?, ?)`,
-      [
-        crypto.randomUUID(),
-        cashSessionId,
-        input.method,
-        amountCents,
-        input.description.trim() || "Recebimento de caderneta",
-      ],
-    );
-
-    await db.execute("COMMIT");
-  } catch (error) {
-    await db.execute("ROLLBACK");
-    throw error;
-  }
+  return writeOperation("RECEIVE", { customerId: input.customerId, amountCents: toCents(input.amount), method: input.method, description: input.description }, input.operationId);
 }

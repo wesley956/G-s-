@@ -1,11 +1,7 @@
+import { writeOperation } from "../lib/operations";
+import { toCents, parseDecimal } from "../lib/money";
 import { getDb } from "../lib/db";
 import type { Category, Product, ProductFormData } from "../types/product";
-
-function toCents(value: string) {
-  const normalized = value.replace(/\./g, "").replace(",", ".").trim();
-  const number = Number(normalized || 0);
-  return Math.round(number * 100);
-}
 
 export function formatCurrency(cents: number) {
   return new Intl.NumberFormat("pt-BR", {
@@ -28,32 +24,16 @@ export async function listCategories() {
   );
 }
 
-export async function saveProduct(data: ProductFormData) {
-  const db = await getDb();
-  const id = crypto.randomUUID();
-
-  await db.execute(
-    `INSERT INTO products (
-      id, category_id, sku, name, description,
-      cost_price_cents, counter_price_cents, delivery_price_cents,
-      stock_quantity, minimum_stock, active
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      id,
-      data.categoryId || null,
-      data.sku.trim() || null,
-      data.name.trim(),
-      data.description.trim() || null,
-      toCents(data.costPrice),
-      toCents(data.counterPrice),
-      toCents(data.deliveryPrice),
-      Number(data.stockQuantity || 0),
-      Number(data.minimumStock || 0),
-      data.active ? 1 : 0,
-    ],
-  );
-
-  return id;
+export async function getProduct(id: string) {
+  const db = await getDb(); return (await db.select<Product[]>("SELECT * FROM products WHERE id=?", [id]))[0] ?? null;
+}
+export async function saveCategory(name: string) { return writeOperation<string>("CATEGORY", { name }); }
+export async function saveProduct(data: ProductFormData, id?: string) {
+  return writeOperation<string>("PRODUCT", { id: id ?? null, name: data.name, categoryId: data.categoryId,
+    sku: data.sku, description: data.description, costPriceCents: toCents(data.costPrice),
+    counterPriceCents: toCents(data.counterPrice), deliveryPriceCents: toCents(data.deliveryPrice),
+    stockQuantity: parseDecimal(data.stockQuantity), minimumStock: parseDecimal(data.minimumStock), active: data.active,
+  });
 }
 
 export async function setProductActive(id: string, active: boolean) {

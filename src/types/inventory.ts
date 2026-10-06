@@ -21,6 +21,7 @@ export type InventoryMovement = {
 };
 
 export type StockAction =
+  | "RETURN"
   | "ENTRY"
   | "EXIT"
   | "ADJUSTMENT"

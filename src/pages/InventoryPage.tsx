@@ -16,6 +16,7 @@ import type { InventoryMovement, StockAction } from "../types/inventory";
 import type { Product } from "../types/product";
 
 const actionLabels: Record<StockAction, string> = {
+  RETURN: "Devolução",
   ENTRY: "Entrada",
   EXIT: "Saída",
   ADJUSTMENT: "Ajuste",
@@ -59,7 +60,7 @@ export function InventoryPage() {
   }
 
   useEffect(() => {
-    void load();
+    void load().catch(err => setError(String(err)));
   }, []);
 
   const selectedProduct = products.find((product) => product.id === productId);
@@ -200,6 +201,7 @@ export function InventoryPage() {
           <div className="action-selector">
             {([
               ["ENTRY", ArrowDownToLine],
+              ["RETURN", PackageCheck],
               ["EXIT", ArrowUpFromLine],
               ["ADJUSTMENT", PackageCheck],
               ["LOSS", TriangleAlert],
@@ -246,6 +248,7 @@ export function InventoryPage() {
             <span>Motivo / observação</span>
             <textarea
               rows={4}
+              required
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               placeholder={
