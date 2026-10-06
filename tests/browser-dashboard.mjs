@@ -26,7 +26,7 @@ try {
  await refresh();await page.getByText('Nenhuma venda, cancelamento ou recebimento de caderneta hoje.',{exact:false}).waitFor();assert.equal(await metric('Clientes com dívida').innerText(),'0');
  const base={saleType:'COUNTER',customerId:null,discountCents:0,items:[{productId:'water',quantity:1}],payments:[{method:'CASH',amountCents:1000,receivedCents:2000}]};
  const previous=await op('SALE',base);db.prepare("UPDATE sales SET completed_at=datetime(?,'-1 day') WHERE id=?").run(`${day} 12:00:00`,previous.saleId);await op('CANCEL_SALE',{saleId:previous.saleId,reason:'Venda de ontem devolvida hoje'});
- await op('SALE',{saleType:'COUNTER',customerId:'customer',discountCents:1001,items:[{productId:'gas',quantity:1}],payments:[{method:'CASH',amountCents:5999,receivedCents:10000},{method:'PIX',amountCents:1000},{method:'CREDIT_CUSTOMER',amountCents:4000}]});
+ await op('SALE',{saleType:'DELIVERY',customerId:'customer',discountCents:1001,items:[{productId:'gas',quantity:1}],payments:[{method:'CASH',amountCents:5999,receivedCents:10000},{method:'PIX',amountCents:1000},{method:'CREDIT_CUSTOMER',amountCents:4000}]});
  await op('SALE',{...base,payments:[{method:'DEBIT_CARD',amountCents:400},{method:'CREDIT_CARD',amountCents:600}]});
  await op('RECEIVE',{customerId:'customer',amountCents:1234,method:'CASH'});const payment=db.prepare("SELECT id FROM customer_account_entries WHERE type='PAYMENT'").get().id;await op('REFUND_RECEIPT',{customerId:'customer',paymentId:payment,reason:'Recebimento devolvido'});
  db.exec("UPDATE customers SET active=0; UPDATE products SET minimum_stock=stock_quantity WHERE id='gas'; UPDATE products SET active=0,stock_quantity=0,minimum_stock=1 WHERE id='water'");
