@@ -422,7 +422,7 @@ async fn late_expense_refund_preserves_closed_cash_and_concurrent_cancel_is_once
  let (a,b)=tokio::join!(apply(&f.pool,op.clone()),apply(&f.pool,expense_refund(&expense,session)));assert_eq!(usize::from(a.is_ok())+usize::from(b.is_ok()),1);
  assert_eq!(expected(&f.pool,session).await,1234);assert_eq!(sqlx::query_scalar::<_,i64>("SELECT closing_expected_cents FROM cash_sessions WHERE id='cash'").fetch_one(&f.pool).await.unwrap(),8766);
  assert_eq!(count(&f.pool,"expense_refunds").await,1);assert_eq!(count(&f.pool,"cash_transactions").await,2);
- let replay=operation("EXPENSE",expense_input("PIX",500));let v=apply(&f.pool,replay.clone()).await.unwrap();let refund=expense_refund(&v,session);apply(&f.pool,refund.clone()).await.unwrap();apply(&f.pool,operation("CLOSE_CASH",json!({"sessionId":session,"informedCents":1234}))).await.unwrap();apply(&f.pool,refund).await.unwrap();assert_eq!(count(&f.pool,"expense_refunds").await,2);
+ let mut current_input=expense_input("PIX",500);current_input["sessionId"]=json!(session);let replay=operation("EXPENSE",current_input);let v=apply(&f.pool,replay.clone()).await.unwrap();let refund=expense_refund(&v,session);apply(&f.pool,refund.clone()).await.unwrap();apply(&f.pool,operation("CLOSE_CASH",json!({"sessionId":session,"informedCents":1234}))).await.unwrap();apply(&f.pool,refund).await.unwrap();assert_eq!(count(&f.pool,"expense_refunds").await,2);
 }
 #[tokio::test]
 async fn expense_migration_backfills_legacy_without_new_outflows_and_legacy_api_stays_visible(){
