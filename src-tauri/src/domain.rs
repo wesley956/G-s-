@@ -6,6 +6,7 @@ mod suppliers;
 mod expenses;
 pub mod reports;
 pub mod dashboard;
+pub mod audit;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{Row, Sqlite, Transaction};

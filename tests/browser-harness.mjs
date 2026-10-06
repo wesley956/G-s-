@@ -28,6 +28,8 @@ window.addEventListener('unhandledrejection', e => window.__consoleErrors.push(S
 window.__printRequests = [];
 window.print = () => { const root = document.querySelector('#receipt-print-root'); window.__printRequests.push(root?.innerText || 'MISSING'); };
 window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
+  if (command === 'get_audit' && window.__failAudit) throw new Error('Falha simulada ao consultar auditoria');
+  const auditDelay = command === 'get_audit' ? window.__delayAudit || 0 : 0;
   if (command === 'get_dashboard' && window.__failDashboard) throw new Error('Falha simulada ao consultar painel');
   const dashboardDelay = command === 'get_dashboard' ? window.__delayDashboard || 0 : 0;
   if (command === 'export_report_csv' && window.__failReportExport) throw new Error('Falha simulada ao salvar CSV');
@@ -37,6 +39,7 @@ window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
   if (command === 'restore_backup' && window.__cancelRestore) return false;
   const response = await fetch('/__test_ipc', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({command,args}) });
   const result = await response.json(); if (result.error) throw new Error(result.error);
+  if (auditDelay) { await new Promise(resolve => setTimeout(resolve, auditDelay)); window.__auditDelaysCompleted = (window.__auditDelaysCompleted || 0) + 1; }
   if (dashboardDelay) { await new Promise(resolve => setTimeout(resolve, dashboardDelay)); window.__dashboardDelaysCompleted = (window.__dashboardDelaysCompleted || 0) + 1; }
   if (command === 'write_operation' && args.operation.kind === 'RECEIVE' && window.__losePaymentResponseOnce) { window.__losePaymentResponseOnce=false; throw new Error('Resposta interrompida após gravar recebimento'); }
   if (command === 'write_operation' && args.operation.kind === 'REFUND_RECEIPT' && window.__loseRefundResponseOnce) { window.__loseRefundResponseOnce=false; throw new Error('Resposta interrompida após gravar estorno'); }
@@ -82,6 +85,7 @@ export const server = await createServer({
           const path = `tmp/exported/${args.backupId}`;
           await copyFile(`tmp/browser-backups/${args.backupId}`,path); value=path;
         }
+        else if (command === "get_audit") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"AUDIT_READ",data:args.query});
         else if (command === "get_dashboard") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"DASHBOARD_READ",data:{}});
         else if (command === "get_report") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"REPORT_READ",data:args.period});
         else if (command === "export_report_csv") {

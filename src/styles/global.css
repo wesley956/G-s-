@@ -82,6 +82,9 @@ textarea {
 }
 
 .nav-list {
+  min-height: 0;
+  overflow-y: auto;
+  margin-bottom: 16px;
   display: grid;
   gap: 5px;
 }

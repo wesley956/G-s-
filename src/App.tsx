@@ -6,6 +6,7 @@ import { CashRegisterPage } from "./pages/CashRegisterPage";
 import { CustomerAccountPage } from "./pages/CustomerAccountPage";
 import { CustomerFormPage } from "./pages/CustomerFormPage";
 import { CustomersPage } from "./pages/CustomersPage";
+import { AuditPage } from "./pages/AuditPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { NewSalePage } from "./pages/NewSalePage";
@@ -24,6 +25,7 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
+        <Route path="/audit" element={<AuditPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/sales/new" element={<NewSalePage />} />
         <Route path="/sales" element={<SalesPage />} />

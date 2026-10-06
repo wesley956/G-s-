@@ -1,4 +1,5 @@
 import {
+  History,
   BarChart3,
   Boxes,
   CircleDollarSign,
@@ -28,6 +29,7 @@ const items = [
   ["/expenses", "Despesas", CircleDollarSign],
   ["/suppliers", "Fornecedores", Truck],
   ["/reports", "Relatórios", BarChart3],
+  ["/audit", "Auditoria", History],
   ["/settings", "Configurações", Settings],
 ] as const;
 

@@ -32,6 +32,10 @@ async fn save_receipt_pdf(
 }
 
 #[tauri::command]
+async fn get_audit(app:tauri::AppHandle,query:domain::audit::Query)->Result<domain::audit::Page,String> {
+    let pool=database_pool(&app).await?;domain::audit::read(&pool,query).await
+}
+#[tauri::command]
 async fn get_dashboard(app:tauri::AppHandle)->Result<domain::dashboard::Dashboard,String> {
     let pool=database_pool(&app).await?;domain::dashboard::read(&pool).await
 }
@@ -179,7 +183,7 @@ pub fn run() {
             Ok(())
         }).build())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![get_dashboard, get_report, export_report_csv, save_receipt_pdf, write_operation, log_error, create_backup, list_backups, export_backup, get_backup_policy, set_backup_policy, check_backup_schedule, backup_status, restore_backup])
+        .invoke_handler(tauri::generate_handler![get_audit, get_dashboard, get_report, export_report_csv, save_receipt_pdf, write_operation, log_error, create_backup, list_backups, export_backup, get_backup_policy, set_backup_policy, check_backup_schedule, backup_status, restore_backup])
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:deposito.db", migrations)

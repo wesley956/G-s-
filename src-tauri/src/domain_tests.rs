@@ -566,3 +566,6 @@ async fn dashboard_reads_a_consistent_snapshot_during_concurrent_sales(){
  }};
  tokio::join!(writes,reads);assert_eq!(dashboard::read(&f.pool).await.unwrap().sales_count,8);
 }
+
+#[path = "audit_tests.rs"]
+mod audit_tests;

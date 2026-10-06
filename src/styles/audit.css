@@ -1,0 +1,23 @@
+.audit-coverage { margin-bottom:20px; }
+.audit-coverage h2 { margin-top:0; }
+.audit-filters { display:flex; flex-wrap:wrap; align-items:flex-end; gap:14px; }
+.audit-filters .field { flex:1 1 140px; margin:0; }
+.audit-filters .audit-kind { flex-basis:220px; }
+.audit-filters .audit-search { flex-basis:240px; }
+.audit-filters > p { flex-basis:100%; margin:0; }
+.audit-filters button { min-height:44px; }
+.audit-table { table-layout:fixed; width:100%; min-width:580px; }
+.audit-table th { text-align:left; }
+.audit-table tbody th { padding:14px 13px; }
+.audit-table th:nth-child(1) { width:22%; }
+.audit-table th:nth-child(2) { width:27%; }
+.audit-table th:nth-child(3) { width:32%; }
+.audit-id, .audit-reference { overflow-wrap:anywhere; }
+.audit-pagination { display:flex; flex-wrap:wrap; gap:16px; align-items:center; justify-content:flex-end; margin:20px 0; }
+.audit-detail dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.audit-detail dt { color:#94a3b8; font-size:13px; }
+.audit-detail dd { margin:6px 0 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.audit-reference { display:flex; flex-wrap:wrap; gap:12px; }
+.audit-reference a { color:#67e8f9; text-decoration:underline; }
+.audit-page .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.audit-period { overflow-wrap:anywhere; }
