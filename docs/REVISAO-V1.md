@@ -1,6 +1,6 @@
 # Revisão das issues #1–#7
 
-A revisão compara os requisitos das issues com o código acumulado dos PRs #9–#15. Correções estão no PR #17, empilhado no #15. Esses PRs ainda não foram integrados à `main`.
+A revisão compara os requisitos das issues com o código acumulado dos PRs #9–#15. Correções estão no PR #17, originalmente empilhado no #15. A cadeia de 16 PRs foi integrada à `main` em 06/10/2026; a homologação no depósito segue na [issue #32](https://github.com/wesley956/G-s-/issues/32).
 
 | Issue | Problema identificado | Correção |
 | --- | --- | --- |
@@ -26,7 +26,7 @@ A revisão compara os requisitos das issues com o código acumulado dos PRs #9�
 - Venda fiado que já recebeu pagamento é bloqueada para cancelamento simples. A issue #20 acrescenta estorno explícito na caderneta: devolve o recebimento inteiro, reabre os débitos e preserva as alocações históricas. O cancelamento só é liberado quando não houver recebimento ativo destinado à venda. Registros anteriores à migração 5 sem vínculo ao caixa exigem revisão; não são associados por data/descrição.
 - A devolução manual de estoque registra somente o retorno físico. Para devolver pagamento e anular venda, use o cancelamento da venda, evitando registrar o retorno duas vezes.
 - Automático significa abrir o diálogo do Windows; não significa impressão silenciosa. Impressora física e diálogo de PDF continuam pendentes de homologação no Windows.
-- Nas rodadas posteriores, fornecedores (#22 / PR #23), despesas completas (#24 / PR #26) e relatórios (#25 / PR #27) receberam implementação. Consulte os documentos específicos de [fornecedores](FORNECEDORES.md), [despesas](DESPESAS.md) e [relatórios](RELATORIOS.md). A integração, a homologação e os itens ainda pendentes no [roadmap](ROADMAP.md) continuam separados da implementação.
+- Nas rodadas posteriores, fornecedores (#22 / PR #23), despesas completas (#24 / PR #26) e relatórios (#25 / PR #27) receberam implementação e foram integrados. Consulte os documentos específicos de [fornecedores](FORNECEDORES.md), [despesas](DESPESAS.md) e [relatórios](RELATORIOS.md). A homologação e os itens ainda pendentes no [roadmap](ROADMAP.md) continuam separados da implementação.
 
 ## Resultado da rodada
 

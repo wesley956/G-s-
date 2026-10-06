@@ -54,13 +54,16 @@ Substituir controles em papel/caderno por um programa Windows simples, rápido e
 - Fornecedores
 - Relatórios
 - Configurações
+- Auditoria
 
 ## Status
-V1 em desenvolvimento, com PRs empilhados ainda não integrados à `main`.
+V1 integrada à `main` em 06/10/2026, com os 16 PRs incorporados na ordem das dependências e o histórico preservado.
 
 As issues #1–#7 têm implementação e correções de revisão no PR #17. Os PRs #18 e #19 implementam a #8: backup manual/automático, retenção, exportação, restauração preventiva e instaladores offline. Consulte [a revisão](docs/REVISAO-V1.md) e [o estado do backup](docs/BACKUP.md).
 
-Ainda pendentes: indicadores finais do dashboard, definição da consulta geral de auditoria, integração dos PRs e homologação de instalação/upgrade, recuperação, impressão e seletores no equipamento do depósito. O cadastro de fornecedores foi implementado na issue #22, com busca, edição, ativação e inclusão no backup. Despesas completas foram implementadas na issue #24, com fornecedores, categorias, formas de pagamento e cancelamento com devolução no caixa atual. O histórico avulso anterior permanece disponível. Relatórios foram implementados na issue #25: consultas offline por período, valores atuais de estoque/cadernetas identificados e exportação CSV nativa. Consulte [as regras dos relatórios](docs/RELATORIOS.md).
+Fornecedores, despesas, relatórios/CSV, indicadores do painel e consulta de operações confirmadas estão implementados. A auditoria possui [cobertura parcial explícita](docs/AUDITORIA.md). A árvore após a integração dos PRs #9–#31 é `5025c6232239aae8c52b0f2ce9dd905b8f2137a3`, igual à versão validada no PR #31; commit de integração `474483c825bbef94794e599fe6f3741ba86acc14`.
+
+A homologação de instalação/upgrade, recuperação, impressora e seletores no equipamento do depósito permanece pendente. Consulte o [roteiro de homologação](docs/HOMOLOGACAO.md) e acompanhe a CI e os instaladores da versão integrada na [issue #32](https://github.com/wesley956/G-s-/issues/32). Os testes Windows automáticos usam uma VM e não substituem a validação no equipamento do cliente.
 
 ## Desenvolvimento e verificação
 
@@ -87,6 +90,8 @@ node tests/browser-refunds.mjs
 node tests/browser-suppliers.mjs
 node tests/browser-expenses.mjs
 node tests/browser-reports.mjs
+node tests/browser-dashboard.mjs
+node tests/browser-operations.mjs
 ```
 
 Execute os roteiros um por vez. Eles usam SQLite em arquivo e o domínio Rust real, com impressão/seletor emulados. No Windows, informe `GAS_DOMAIN_RUNNER` com o caminho de `domain-runner.exe`. A CI executa testes nativos também no Windows, além de gerar NSIS/MSI e testar a instalação NSIS, a abertura do aplicativo instalado e o backup automático.

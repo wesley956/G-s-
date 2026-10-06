@@ -6,7 +6,7 @@ Controlar todo o movimento financeiro diário do depósito de forma simples e au
 ## Abertura
 - Apenas um caixa pode ficar aberto por vez.
 - Abertura registra valor inicial de troco.
-- Venda deverá exigir caixa aberto quando a Issue #5 for integrada.
+- Venda exige caixa aberto, conferido pelo backend na mesma transação.
 
 ## Movimentações
 - `SALE`: gerada automaticamente por venda.

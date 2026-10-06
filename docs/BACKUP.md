@@ -34,4 +34,4 @@ Os instaladores NSIS e MSI incluem o instalador offline do WebView2. A CI gera o
 
 Os testes nativos cobrem concorrência, cópia reaberta sem WAL de origem, gravação não confirmada, retenção, exportação sem sobrescrita, política persistida, agendamento, restauração com cópia preventiva, interrupções entre renomes, reversão de instalação incompleta, cópia preventiva inválida, recuperação de WAL após perda do processo e migrações incompatíveis. O roteiro de interface usa o domínio Rust real; seletor, confirmação e reinício são emulados.
 
-Pendências de homologação: instalação/upgrade mantendo dados em Windows 10/11 do depósito, confirmação/seletores reais, recuperação no equipamento e impressão física. PRs #18 e #19 permanecem empilhados e a issue #8 aberta até integração e homologação.
+Pendências de homologação: instalação/upgrade mantendo dados em Windows 10/11 do depósito, confirmação/seletores reais, recuperação no equipamento e impressão física. PRs #18 e #19 foram integrados à main; a issue #8 permanece aberta até homologação. Roteiro em [HOMOLOGACAO.md](HOMOLOGACAO.md).
