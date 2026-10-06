@@ -44,7 +44,7 @@ Os itens marcados têm implementação na cadeia de PRs, ainda não integrada à
 - [x] Backup manual
 - [x] Backup automático
 - [x] Restauração
-- [ ] Auditoria — há histórico financeiro e repetição protegida; a consulta geral de alterações ainda precisa de escopo e implementação
+- [x] Auditoria — consulta offline das operações confirmadas, filtros, paginação e detalhes preservados; cobertura parcial explicitada ([#30](https://github.com/wesley956/G-s-/issues/30), `docs/AUDITORIA.md`)
 - [x] Instalador Windows
 - [x] Testes de recuperação e upgrade
 
