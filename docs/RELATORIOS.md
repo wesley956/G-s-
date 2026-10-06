@@ -18,9 +18,9 @@ Resultados negativos são possíveis em períodos com devoluções de operaçõe
 
 ## CSV
 
-A exportação consulta uma nova fotografia consistente do período, gera o CSV no backend e abre o seletor nativo. A tela recebe a mesma fotografia usada no arquivo. Cancelar não grava arquivo; falhas aparecem na tela. Um arquivo existente nunca é truncado: escolha um novo nome.
+A exportação consulta uma nova fotografia consistente do período, gera o CSV no backend e abre o seletor nativo. A tela recebe a mesma fotografia usada no arquivo. Cancelar não grava arquivo; falhas aparecem na tela. O nome sugerido inclui o instante de geração para facilitar exportações repetidas. Um arquivo existente nunca é truncado: escolha um novo nome.
 
-UTF-8 com BOM, separador `;`, nove colunas fixas, campos entre aspas e linhas CRLF. Aspas, separadores e quebras de linha em textos são escapados. Valores monetários usam vírgula decimal e duas casas, sem arredondamento por ponto flutuante. Quantidades usam duas casas. Datas dos eventos e valores atuais são apresentadas no horário local; a geração também inclui o instante UTC identificado nos metadados.
+UTF-8 com BOM, separador `;`, nove colunas fixas, campos entre aspas e linhas CRLF. Aspas, separadores e quebras de linha em textos são escapados. Valores monetários usam vírgula decimal e duas casas, sem arredondamento por ponto flutuante. Quantidades usam duas casas. Datas do período, dos eventos e dos valores atuais usam dia/mês/ano, no horário local; a geração também inclui o instante UTC identificado nos metadados.
 
 Textos iniciados por `=`, `+`, `-`, `@`, inclusive após espaços/controles, e controles tabulação/quebra de linha iniciais recebem apóstrofo para evitar interpretação como fórmula. Colunas monetárias/quantidades geradas pelo backend preservam números negativos.
 

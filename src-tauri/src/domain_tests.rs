@@ -496,7 +496,7 @@ async fn reports_keep_historical_names_and_current_inactive_accounts_stock_after
 #[tokio::test]
 async fn reports_reject_invalid_periods_and_include_both_endpoints(){
  let f=setup().await;
- for (start,end) in [("2026-02-30","2026-03-01"),("2026-1-01","2026-01-10"),("2026-01-11","2026-01-10"),("","2026-01-01")] {assert!(reports::read(&f.pool,report_period(start,end)).await.is_err());}
+ for (start,end) in [("2026-02-30","2026-03-01"),("2026-1-01","2026-01-10"),("-001-01-01","2026-01-10"),("2026-01-11","2026-01-10"),("","2026-01-01")] {assert!(reports::read(&f.pool,report_period(start,end)).await.is_err());}
  f.pool.execute("INSERT INTO cash_transactions(id,cash_session_id,type,amount_cents,created_at) VALUES ('first','cash','SUPPLY',1,'2026-01-10 12:00:00'),('last','cash','SUPPLY',2,'2026-01-11 12:00:00'),('outside','cash','SUPPLY',4,'2026-01-12 12:00:00')").await.unwrap();
  let r=reports::read(&f.pool,report_period("2026-01-10","2026-01-11")).await.unwrap();assert_eq!(r.cash["suppliesCents"],3);assert_eq!(r.movements.len(),2);assert_eq!(count(&f.pool,"operation_results").await,0);
 }
@@ -505,7 +505,7 @@ async fn reports_csv_protects_text_formulas_preserves_cents_quotes_and_native_fi
  let f=setup().await;
  let mut expense=expense_input("PIX",1001);expense["description"]=json!(" =SUM(1;2)\n\"Água\"");expense["category"]=json!("@Categoria");apply(&f.pool,operation("EXPENSE",expense)).await.unwrap();date_events(&f.pool,"2026-01-10").await;
  let mut r=report_day(&f.pool,"2026-01-10").await;r.sales["netCents"]=json!(-1001);r.accounts=vec![json!({"id":"a","name":"\t+cmd","balanceCents":1,"active":true}),json!({"id":"b","name":"\u{2003}-cmd","balanceCents":1,"active":false})];
- r.movements[0]["description"]=json!(" =SUM(1;2)\n\"Água\"");let csv=reports::csv(&r).unwrap();assert!(csv.starts_with("\u{feff}\"Seção\""));assert!(csv.contains("\"Valor (R$)\";\"Quantidade\""));assert!(csv.contains("\"' =SUM(1;2)\n\"\"Água\"\"\""));assert!(csv.contains("\"'@Categoria\""));assert!(csv.contains("\"'\t+cmd\""));assert!(csv.contains("\"'\u{2003}-cmd\""));assert!(csv.contains("\"-10,01\""));assert!(csv.ends_with("\r\n"));
+ r.movements[0]["description"]=json!(" =SUM(1;2)\n\"Água\"");let csv=reports::csv(&r).unwrap();assert!(csv.starts_with("\u{feff}\"Seção\""));assert!(csv.contains("\"Valor (R$)\";\"Quantidade\""));assert!(csv.contains("10/01/2026 a 10/01/2026"));assert!(csv.contains("\"' =SUM(1;2)\n\"\"Água\"\"\""));assert!(csv.contains("\"'@Categoria\""));assert!(csv.contains("\"'\t+cmd\""));assert!(csv.contains("\"'\u{2003}-cmd\""));assert!(csv.contains("\"-10,01\""));assert!(csv.ends_with("\r\n"));
  assert_eq!(reports::money(i64::MIN),"-92233720368547758,08");let path=f.dir.path().join("report.csv");reports::save_csv_new(&path,&csv).unwrap();assert_eq!(std::fs::read_to_string(&path).unwrap(),csv);
  assert!(reports::save_csv_new(&path,"replacement").is_err());assert_eq!(std::fs::read_to_string(&path).unwrap(),csv);assert!(reports::save_csv_new(&f.dir.path().join("missing/report.csv"),&csv).is_err());assert_eq!(count(&f.pool,"expenses").await,1);
 }

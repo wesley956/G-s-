@@ -7,7 +7,7 @@ use std::path::Path;
 pub struct Period {pub start:String,pub end:String}
 impl Period {
     pub fn validate(&self)->Result<()> {
-        for date in [&self.start,&self.end] {if date.len()!=10 || chrono::NaiveDate::parse_from_str(date,"%Y-%m-%d").is_err(){return Err("Informe datas válidas para o relatório.".into());}}
+        for date in [&self.start,&self.end] {if date.len()!=10 || !chrono::NaiveDate::parse_from_str(date,"%Y-%m-%d").is_ok_and(|parsed|parsed.format("%Y-%m-%d").to_string()==date.as_str()){return Err("Informe datas válidas para o relatório.".into());}}
         if self.start>self.end {return Err("A data inicial deve ser anterior ou igual à data final.".into());}Ok(())
     }
 }
@@ -88,7 +88,7 @@ fn record(out:&mut String,section:&str,date:&str,id:&str,description:&str,group:
 }
 pub fn csv(r:&Report)->Result<String> {
     let mut out="\u{feff}\"Seção\";\"Data local\";\"Identificador\";\"Descrição\";\"Forma / categoria\";\"Indicador\";\"Valor (R$)\";\"Quantidade\";\"Situação\"\r\n".to_owned();
-    let period=format!("{} a {}",r.start,r.end);record(&mut out,"Consulta","", "",&format!("Gerado em {} (UTC)",r.generated_at),"",&period,None,None,"");
+    let period=format!("{} a {}",chrono::NaiveDate::parse_from_str(&r.start,"%Y-%m-%d").map_err(|e|e.to_string())?.format("%d/%m/%Y"),chrono::NaiveDate::parse_from_str(&r.end,"%Y-%m-%d").map_err(|e|e.to_string())?.format("%d/%m/%Y"));record(&mut out,"Consulta","", "",&format!("Gerado em {} (UTC)",r.generated_at),"",&period,None,None,"");
     for (key,label) in [("grossCents","Vendas brutas"),("discountCents","Descontos"),("soldCents","Vendas após descontos"),("cancelledCents","Cancelamentos no período"),("netCents","Vendas líquidas no período")] {record(&mut out,"Vendas",&period,"","","",label,Some(numeric(&r.sales,key)?),None,"");}
     record(&mut out,"Vendas",&period,"","","","Vendas finalizadas",None,Some(numeric(&r.sales,"count")? as f64),"");record(&mut out,"Vendas",&period,"","","","Vendas canceladas",None,Some(numeric(&r.sales,"cancelledCount")? as f64),"");
     for m in &r.methods {for (key,label) in [("salesCents","Vendas"),("saleRefundCents","Estornos de vendas"),("receiptsCents","Recebimentos de caderneta"),("receiptRefundCents","Devoluções de caderneta"),("expensesCents","Despesas"),("expenseRefundCents","Devoluções de despesas")] {record(&mut out,"Formas",&period,"","",&text_value(m,"method"),label,Some(numeric(m,key)?),None,"");}}

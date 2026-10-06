@@ -43,8 +43,9 @@ async fn export_report_csv(app:tauri::AppHandle,period:domain::reports::Period)-
     let pool=database_pool(&app).await?;let report=domain::reports::read(&pool,period).await?;
     let csv=domain::reports::csv(&report)?;
     tauri::async_runtime::spawn_blocking(move || {
+        let stamp=report.generated_at.replace('-', "").replace(':', "");
         let selected=app.dialog().file().add_filter("Relatório CSV", &["csv"])
-            .set_file_name(format!("relatorio-{}-a-{}.csv",report.start,report.end)).blocking_save_file();
+            .set_file_name(format!("relatorio-{}-a-{}-{}.csv",report.start,report.end,stamp)).blocking_save_file();
         let Some(selected)=selected else{return Ok(ReportExport{path:None,report});};
         let path=selected.into_path().map_err(|e|e.to_string())?;
         if !path.extension().and_then(|e|e.to_str()).is_some_and(|e|e.eq_ignore_ascii_case("csv")){return Err("Escolha um arquivo com extensão .csv.".into());}
