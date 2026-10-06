@@ -1,4 +1,6 @@
 use deposito_domain as domain;
+mod backup_commands;
+use backup_commands::*;
 use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
 use tauri_plugin_dialog::DialogExt;
@@ -47,6 +49,7 @@ fn log_error(app: tauri::AppHandle, message: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn write_operation(app: tauri::AppHandle, operation: domain::Operation) -> Result<serde_json::Value, String> {
+    if app.state::<BackupState>().restoring.load(std::sync::atomic::Ordering::SeqCst) { return Err("Restauração em andamento. Aguarde o reinício.".into()); }
     let pool = database_pool(&app).await?;
     domain::apply(&pool, operation).await
 }
@@ -68,7 +71,7 @@ fn backup_directory(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String
 #[tauri::command]
 async fn create_backup(app: tauri::AppHandle) -> Result<domain::backup::Backup, String> {
     let pool = database_pool(&app).await?;
-    domain::backup::create(&pool, &backup_directory(&app)?, 7).await
+    domain::backup::create(&pool, &backup_directory(&app)?, domain::backup_policy::get(&pool).await?.retention).await
 }
 #[tauri::command]
 fn list_backups(app: tauri::AppHandle) -> Result<Vec<domain::backup::Backup>, String> {
@@ -118,13 +121,26 @@ pub fn run() {
     ];
 
     tauri::Builder::default()
+        // Single-instance must run first: no recovery can overlap another app.
+        .plugin(tauri_plugin_single_instance::init(|app,_,_| {
+            if let Some(window)=app.get_webview_window("main") {let _=window.unminimize();let _=window.set_focus();}
+        }))
+        // This plugin runs before SQL and before any app window is created.
+        .plugin(tauri::plugin::Builder::<tauri::Wry>::new("backup-recovery").setup(|app,_| {
+            let directory=app.path().app_config_dir()?;
+            let report=tauri::async_runtime::block_on(domain::recovery::apply_pending(&directory))
+                .map_err(std::io::Error::other)?;
+            app.manage(BackupState {restore_report:report,..Default::default()});
+            Ok(())
+        }).build())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![save_receipt_pdf, write_operation, log_error, create_backup, list_backups, export_backup])
+        .invoke_handler(tauri::generate_handler![save_receipt_pdf, write_operation, log_error, create_backup, list_backups, export_backup, get_backup_policy, set_backup_policy, check_backup_schedule, backup_status, restore_backup])
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:deposito.db", migrations)
                 .build(),
         )
+        .setup(|app| { start_schedule(app.handle().clone()); Ok(()) })
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o aplicativo");
 }

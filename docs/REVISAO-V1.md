@@ -31,8 +31,9 @@ A revisão compara os requisitos das issues com o código acumulado dos PRs #9�
 ## Resultado da rodada
 
 - 13 testes locais de valores, caixa e comprovantes aprovados.
-- 12 testes nativos de integridade aprovados.
+- 13 testes nativos de integridade aprovados.
 - Compilação Rust Windows aprovada na CI de 05/10/2026.
 - Roteiros de comprovantes e revisão funcional aprovados localmente com o executável Rust da CI; sem erros de console.
 - O roteiro encontrou uma corrida no carregamento da edição de produto que podia sobrescrever a digitação. O formulário agora espera a carga e descarta respostas de efeitos desmontados.
-- A CI anterior também detectou seletores incorretos no roteiro novo; foram corrigidos. A rodada final verifica o último commit completo.
+- A repetição de recebimento após perder a resposta do backend foi verificada: o pagamento já confirmado não é duplicado.
+- CI final da revisão aprovada: [execução 37380250344](https://github.com/wesley956/G-s-/actions/runs/37380250344), commit `4fe7156`. Backup manual aprovado com 17 testes nativos e os três roteiros: [execução 37380257149](https://github.com/wesley956/G-s-/actions/runs/37380257149), commit `277e742`.

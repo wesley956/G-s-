@@ -13,6 +13,8 @@ import {
   WalletCards,
 } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { checkBackupSchedule, getBackupStatus } from "../../services/backupService";
 
 const items = [
   ["/dashboard", "Início", LayoutDashboard],
@@ -30,6 +32,26 @@ const items = [
 ] as const;
 
 export function AppShell() {
+  const [backupNotice, setBackupNotice] = useState<{ message: string; error: boolean } | null>(null);
+  useEffect(() => {
+    let active = true;
+    async function readStatus() {
+      try {
+        const status = await getBackupStatus();
+        if (!active) return;
+        if (status.automaticError) setBackupNotice({ message: `O backup automático falhou: ${status.automaticError}`, error: true });
+        else if (status.restoreReport) setBackupNotice({ message: status.restoreReport.message, error: !status.restoreReport.restored });
+        else setBackupNotice(null);
+      } catch (error) {
+        if (active) setBackupNotice({ message: `Não foi possível conferir o backup: ${String(error)}`, error: true });
+      }
+    }
+    void checkBackupSchedule().then(readStatus).catch(error => {
+      if (active) setBackupNotice({ message: `Não foi possível conferir o backup automático: ${String(error)}`, error: true });
+    });
+    const timer = window.setInterval(() => void readStatus(), 60_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -62,6 +84,7 @@ export function AppShell() {
       </aside>
 
       <main className="content">
+        {backupNotice && <div className={`feedback ${backupNotice.error ? 'error' : 'success'}`} role="status">{backupNotice.message}</div>}
         <Outlet />
       </main>
     </div>

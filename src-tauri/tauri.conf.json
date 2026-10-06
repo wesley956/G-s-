@@ -27,9 +27,33 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
-    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "targets": [
+      "nsis",
+      "msi"
+    ],
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
     "shortDescription": "Gestão offline de depósito",
-    "longDescription": "Sistema desktop offline para vendas, estoque, caixa e clientes."
+    "longDescription": "Sistema desktop offline para vendas, estoque, caixa e clientes.",
+    "windows": {
+      "webviewInstallMode": {
+        "type": "offlineInstaller"
+      },
+      "nsis": {
+        "languages": [
+          "PortugueseBR"
+        ],
+        "displayLanguageSelector": false
+      }
+    }
+  },
+  "plugins": {
+    "sql": {
+      "preload": [
+        "sqlite:deposito.db"
+      ]
+    }
   }
 }

@@ -2,14 +2,19 @@
 import { createServer } from "vite";
 import { resetDb } from "./sql-mock.mjs";
 import { nativeOperation } from "./native-bridge.mjs";
-import { rmSync, mkdirSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+import { copyFileSync, rmSync, mkdirSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 
 mkdirSync("tmp", {recursive:true});
 const dbPath = "tmp/browser-test.db";
 rmSync(dbPath,{force:true});
 rmSync("tmp/browser-backups",{force:true,recursive:true});
-export const db = resetDb(dbPath);
+export let db = resetDb(dbPath);
+let restoreReport = null;
+// Each runner invocation is a process. Serialize schedule IPC like the desktop's
+// single backend and its SCHEDULE_LOCK, including React StrictMode startup calls.
+let scheduleQueue = Promise.resolve();
 db.exec(`INSERT INTO cash_sessions (id,status,opening_balance_cents) VALUES ('cash','OPEN',10000);
   INSERT INTO products (id,name,counter_price_cents,delivery_price_cents,stock_quantity) VALUES ('gas','Gás P13',11000,12000,10);
   INSERT INTO products (id,name,counter_price_cents,delivery_price_cents,stock_quantity) VALUES ('water','Água mineral 20 litros',1000,1200,20);
@@ -25,9 +30,11 @@ window.print = () => { const root = document.querySelector('#receipt-print-root'
 window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
   if (command === 'save_receipt_pdf' && window.__cancelPdf) return null;
   if (command === 'save_receipt_pdf' && window.__failPdf) throw new Error('Falha simulada ao salvar PDF');
+  if (command === 'restore_backup' && window.__cancelRestore) return false;
   const response = await fetch('/__test_ipc', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({command,args}) });
   const result = await response.json(); if (result.error) throw new Error(result.error);
   if (command === 'write_operation' && args.operation.kind === 'RECEIVE' && window.__losePaymentResponseOnce) { window.__losePaymentResponseOnce=false; throw new Error('Resposta interrompida após gravar recebimento'); }
+  if (command === 'restore_backup' && result.value) location.reload();
   return result.value;
 } };
 </script>`;
@@ -43,6 +50,21 @@ export const server = await createServer({
         else if (command === "plugin:sql|select") value = db.prepare(args.query).all(...args.values);
         else if (command === "plugin:sql|execute") { const result = db.prepare(args.query).run(...args.values); value = [result.changes, Number(result.lastInsertRowid)]; }
         else if (command === "create_backup") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"BACKUP_CREATE",data:{}});
+        else if (command === "get_backup_policy") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"BACKUP_POLICY_GET",data:{}});
+        else if (command === "set_backup_policy") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"BACKUP_POLICY_SET",data:args.policy});
+        else if (command === "check_backup_schedule") {
+          const check=scheduleQueue.then(()=>nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"BACKUP_CHECK",data:{}}));
+          scheduleQueue=check.catch(()=>{});value=await check;
+        }
+        else if (command === "backup_status") value = {restoreReport,automaticError:null};
+        else if (command === "restore_backup") {
+          if (!args.backupId) {value=false;}
+          else {
+            const directory="tmp/browser-recovery";rmSync(directory,{force:true,recursive:true});
+            restoreReport = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"BACKUP_RESTORE",data:{sourcePath:`tmp/browser-backups/${args.backupId}`,recoveryDirectory:directory}});
+            db.close();copyFileSync(`${directory}/deposito.db`,dbPath);db=new DatabaseSync(dbPath);value=true;
+          }
+        }
         else if (command === "list_backups") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"BACKUP_LIST",data:{}});
         else if (command === "export_backup") {
           await mkdir("tmp/exported",{recursive:true});

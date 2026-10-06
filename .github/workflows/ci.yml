@@ -67,7 +67,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          cache-on-failure: true
       - run: npm ci
       - run: npm run build
       - run: cargo check --manifest-path src-tauri/Cargo.toml
       - run: cargo test --manifest-path src-tauri/domain/Cargo.toml --target-dir src-tauri/target
+      - run: npm run tauri -- build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers-${{ github.run_id }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/msi/*.msi
+      - run: ./tests/windows-installer-smoke.ps1
+        shell: pwsh
