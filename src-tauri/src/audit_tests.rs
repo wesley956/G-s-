@@ -66,3 +66,14 @@ async fn audit_all_native_kinds_survive_backup_reopen_with_original_values(){
  let copy=f.dir.path().join("audit.sqlite");backup::snapshot(&f.pool,&copy).await.unwrap();backup::validate_restore(&copy).await.unwrap();let reopened=connect(&copy).await;
  let restored=audit::read(&reopened,query()).await.unwrap();assert_eq!(restored.items,page.items);assert_eq!(restored.total,page.total);assert_eq!(restored.query.anchor,page.query.anchor);assert_eq!(records(&reopened).await,records(&f.pool).await);reopened.close().await;
 }
+
+#[tokio::test]
+async fn audit_missing_legacy_references_do_not_invent_links_or_names(){
+ let f=setup().await;
+ for (key,request,result) in [("missing-sale",json!({"kind":"CANCEL_SALE","data":{"saleId":"gone","reason":"Motivo preservado"}}),Value::Null),("missing-cash",json!({"kind":"OPEN_CASH","data":{"amountCents":1001}}),json!("gone")),("missing-product",json!({"kind":"STOCK","data":{"productId":"gone","action":"ENTRY","quantity":1,"reason":"Entrada antiga"}}),json!({"previousQuantity":2,"newQuantity":3,"delta":1}))] {
+  sqlx::query("INSERT INTO operation_results(id,request_json,result_json) VALUES (?,?,?)").bind(key).bind(request.to_string()).bind(result.to_string()).execute(&f.pool).await.unwrap();
+ }
+ let page=audit::read(&f.pool,query()).await.unwrap();assert_eq!(page.total,3);
+ for item in &page.items {assert!(item["references"].as_array().unwrap().is_empty(),"{item}");assert!(values(item).contains(&"gone"));}
+ let sale=page.items.iter().find(|i|i["id"]=="missing-sale").unwrap();assert!(sale["warning"].is_string());assert!(values(sale).contains(&"Motivo preservado"));
+}

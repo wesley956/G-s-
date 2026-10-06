@@ -62,7 +62,11 @@ async fn detail(tx:&mut Tx,row:sqlx::sqlite::SqliteRow)->Result<Value> {
     if sqlx::query_scalar::<_,i64>(&format!("SELECT COUNT(*) FROM {table} WHERE id=?")).bind(value).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?>0 {references.push(json!({"id":value,"label":value,"route":format!("/{route}/{}/edit",route_id(value)),"linkLabel":name}));}
    }
   }
-  if kind=="OPEN_CASH" {if let Some(value)=result.as_str(){field(&mut fields,"Caixa aberto",value.into());references.push(json!({"id":value,"label":"Caixa relacionado","route":"/cash","linkLabel":"Histórico de caixa"}));}}
+  let session=data["sessionId"].as_str().or_else(||result["cashSessionId"].as_str()).or_else(||if kind=="OPEN_CASH"{result.as_str()}else{None});
+  if let Some(value)=session {
+   if data["sessionId"].is_null(){field(&mut fields,"Caixa relacionado",value.into());}
+   if sqlx::query_scalar::<_,i64>("SELECT COUNT(*) FROM cash_sessions WHERE id=?").bind(value).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?>0 {references.push(json!({"id":value,"label":"Caixa relacionado","route":"/cash","linkLabel":"Histórico de caixa"}));}
+  }
   if kind=="CATEGORY" {if let Some(value)=result.as_str(){field(&mut fields,"Categoria criada",value.into());}}
   if let Some(value)=data["categoryId"].as_str(){field(&mut fields,"Categoria informada (ID)",value.into());}
   for (key,name) in [("sessionId","Caixa referenciado"),("paymentId","Recebimento referenciado"),("expenseId","Despesa referenciada")] {named(&mut fields,data,key,name);}
