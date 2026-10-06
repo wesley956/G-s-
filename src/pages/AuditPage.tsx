@@ -60,7 +60,7 @@ export function AuditPage() {
     <form className="panel audit-filters" onSubmit={event => { event.preventDefault(); void load({ ...filters, page: 1, anchor: null }); }}>
       <label className="field">De<input type="date" required value={filters.start} disabled={busy} onChange={e => setFilters(previous => ({ ...previous, start: e.target.value }))} /></label>
       <label className="field">Até<input type="date" required value={filters.end} disabled={busy} onChange={e => setFilters(previous => ({ ...previous, end: e.target.value }))} /></label>
-      <label className="field audit-kind">Tipo<select value={filters.kind || ''} disabled={busy} onChange={e => setFilters(previous => ({ ...previous, kind: e.target.value || null }))}><option value="">Todos os tipos</option>{kinds.map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label>
+      <label className="field audit-kind">Tipo<select aria-label="Tipo" value={filters.kind || ''} disabled={busy} onChange={e => setFilters(previous => ({ ...previous, kind: e.target.value || null }))}><option value="">Todos os tipos</option>{kinds.map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label>
       <label className="field audit-search">Buscar no registro<input type="search" maxLength={120} value={filters.search} placeholder="ID, referência ou texto informado" disabled={busy} onChange={e => setFilters(previous => ({ ...previous, search: e.target.value }))} /></label>
       <button className="primary-button" type="submit" disabled={busy}>Consultar / atualizar</button>
       <p className="muted">Datas inclusivas, no horário local. A busca considera IDs e dados informados na operação; nomes atuais e dados acrescentados aos detalhes não entram na busca. Acentos devem ser digitados como registrados.</p>
@@ -76,7 +76,7 @@ export function AuditPage() {
       <div id="audit-details">{item && <article className="panel audit-detail" aria-label="Detalhes da operação"><h2>{item.label}</h2><p className="audit-id">Operação {item.id} · {item.date || 'Data não disponível'}</p>{item.warning && <p className="feedback">{item.warning}</p>}
         <dl>{item.fields.map((field, index) => <div key={index}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}</dl>
         {!item.fields.length && <p className="muted">Nenhum detalhe legível disponível neste registro.</p>}
-        {item.references.map((reference, index) => <p className="audit-reference" key={index}><span>{reference.label} · {reference.id}</span><Link to={reference.route}>{reference.linkLabel}</Link></p>)}
+        {item.references.map((reference, index) => <p className="audit-reference" key={index}><span>{reference.label === reference.id ? reference.id : `${reference.label} · ${reference.id}`}</span><Link to={reference.route}>{reference.linkLabel}</Link></p>)}
         <p className="muted">Nomes históricos aparecem quando preservados na operação ou no comprovante. Links para cadastros mostram a situação atual.</p>
       </article>}</div>
     </>}
