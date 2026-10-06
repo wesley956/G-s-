@@ -1,7 +1,7 @@
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
-  ClipboardClock,
+  ClipboardList,
   PackageCheck,
   Search,
   TriangleAlert,
@@ -271,7 +271,7 @@ export function InventoryPage() {
             <p className="eyebrow">Auditoria</p>
             <h2>Histórico de movimentações</h2>
           </div>
-          <ClipboardClock size={20} className="muted" />
+          <ClipboardList size={20} className="muted" />
         </div>
 
         {movements.length === 0 ? (

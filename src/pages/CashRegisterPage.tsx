@@ -1,6 +1,6 @@
 import {
-  BanknoteArrowDown,
-  BanknoteArrowUp,
+  ArrowDownToLine,
+  ArrowUpFromLine,
   CircleDollarSign,
   LockKeyhole,
   ReceiptText,
@@ -26,6 +26,10 @@ const emptySummary: CashSummary = {
   debitSalesCents: 0,
   creditSalesCents: 0,
   customerCreditCents: 0,
+  receiptCashCents: 0,
+  receiptPixCents: 0,
+  receiptDebitCents: 0,
+  receiptCreditCents: 0,
   suppliesCents: 0,
   withdrawalsCents: 0,
   expensesCents: 0,
@@ -36,6 +40,7 @@ const emptySummary: CashSummary = {
 
 const typeLabels: Record<string, string> = {
   SALE: "Venda",
+  RECEIPT: "Recebimento de caderneta",
   SUPPLY: "Suprimento",
   WITHDRAWAL: "Sangria",
   EXPENSE: "Despesa",
@@ -334,10 +339,10 @@ export function CashRegisterPage() {
 
             <div className="cash-action-selector">
               <button type="button" className={movementType === "SUPPLY" ? "selected" : ""} onClick={() => setMovementType("SUPPLY")}>
-                <BanknoteArrowDown size={17} /> Suprimento
+                <ArrowDownToLine size={17} /> Suprimento
               </button>
               <button type="button" className={movementType === "WITHDRAWAL" ? "selected" : ""} onClick={() => setMovementType("WITHDRAWAL")}>
-                <BanknoteArrowUp size={17} /> Sangria
+                <ArrowUpFromLine size={17} /> Sangria
               </button>
               <button type="button" className={movementType === "EXPENSE" ? "selected" : ""} onClick={() => setMovementType("EXPENSE")}>
                 <ReceiptText size={17} /> Despesa

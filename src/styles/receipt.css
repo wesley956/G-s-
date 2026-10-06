@@ -1,0 +1,58 @@
+.receipt-dialog {
+  color: #f8fafc;
+  background: #111b30;
+  border: 1px solid #334155;
+  border-radius: 16px;
+  width: min(1040px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  padding: 22px;
+  overflow: auto;
+}
+.receipt-dialog::backdrop { background: rgb(0 0 0 / 70%); }
+.receipt-dialog-header, .receipt-toolbar, .receipt-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.receipt-dialog-header h2 { margin: 0 0 16px; }
+.receipt-toolbar { align-items: end; margin: 12px 0 20px; }
+.receipt-toolbar .field { flex: 1; }
+.receipt-preview-area {
+  background: #0b1020;
+  padding: 24px;
+  max-height: 48vh;
+  overflow: auto;
+  border-radius: 10px;
+}
+.receipt-pages { margin: 0 auto; width: max-content; max-width: 100%; }
+.receipt-paper {
+  color: #000;
+  background: #fff;
+  padding: 3mm;
+  font: 9pt/1.4 Arial, sans-serif;
+  overflow-wrap: anywhere;
+  margin: 0 auto 18px;
+}
+.paper-58mm .receipt-paper { width: 58mm; }
+.paper-80mm .receipt-paper { width: 80mm; }
+.paper-A4 .receipt-paper { width: 210mm; padding: 12mm; font-size: 11pt; }
+.receipt-paper p { margin: 0 0 2px; break-inside: avoid; }
+.receipt-bold { font-weight: 700; }
+.receipt-paper hr { border: 0; border-top: 1px dashed #777; margin: 9px 0; }
+.receipt-dialog-actions { margin-top: 20px; justify-content: flex-end; }
+.receipt-settings-form { padding: 24px; max-width: 980px; }
+.receipt-settings-form fieldset { border: 1px solid #334155; padding: 20px; margin: 0 0 24px; border-radius: 10px; }
+.receipt-settings-form legend { padding: 0 8px; font-weight: 700; }
+#receipt-print-root { display: none; }
+
+@media print {
+  html, body { min-width: 0 !important; min-height: 0 !important; background: #fff !important; }
+  body > :not(#receipt-print-root) { display: none !important; }
+  #receipt-print-root { display: block; color: #000; background: #fff; }
+  .receipt-pages { margin: 0; max-width: none; }
+  .receipt-paper { margin: 0; border: 0; border-radius: 0; box-shadow: none; break-after: page; }
+  .receipt-paper:last-child { break-after: auto; }
+  .paper-A4, .paper-A4 .receipt-paper { width: 100%; }
+  .paper-A4 .receipt-paper { padding: 0; }
+}

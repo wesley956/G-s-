@@ -46,6 +46,7 @@ export function AppShell() {
             <NavLink
               key={to}
               to={to}
+              end={to === "/sales"}
               className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
             >
               <Icon size={19} />

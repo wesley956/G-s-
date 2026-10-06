@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ReceiptDialog } from "../components/receipts/ReceiptDialog";
 import { formatCurrency } from "../services/productService";
 import { cancelSale, listSales } from "../services/saleService";
 import type { SaleRecord } from "../types/sale";
@@ -6,12 +7,13 @@ import type { SaleRecord } from "../types/sale";
 export function SalesPage() {
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [receiptId, setReceiptId] = useState<string | null>(null);
 
   async function load() {
     setSales(await listSales());
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load().catch((err) => setError(err instanceof Error ? err.message : "Não foi possível carregar as vendas.")); }, []);
 
   return (
     <section>
@@ -44,6 +46,7 @@ export function SalesPage() {
                     </span>
                   </td>
                   <td className="table-actions">
+                    {sale.status !== "OPEN" && <button className="ghost-button" onClick={() => setReceiptId(sale.id)}>Comprovante / reimprimir</button>}
                     {sale.status === "COMPLETED" && (
                       <button
                         className="ghost-button danger-link"
@@ -68,6 +71,7 @@ export function SalesPage() {
           </table>
         </div>
       </div>
+      {receiptId && <ReceiptDialog key={receiptId} saleId={receiptId} onClose={() => setReceiptId(null)} />}
     </section>
   );
 }

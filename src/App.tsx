@@ -11,7 +11,9 @@ import { NewSalePage } from "./pages/NewSalePage";
 import { ProductFormPage } from "./pages/ProductFormPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { SalesPage } from "./pages/SalesPage";
+import { PrinterSettingsPage } from "./pages/PrinterSettingsPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
+import "./styles/receipt.css";
 
 export default function App() {
   return (
@@ -31,7 +33,8 @@ export default function App() {
         <Route path="/expenses" element={<PlaceholderPage title="Despesas" />} />
         <Route path="/suppliers" element={<PlaceholderPage title="Fornecedores" />} />
         <Route path="/reports" element={<PlaceholderPage title="Relatórios" />} />
-        <Route path="/settings" element={<PlaceholderPage title="Configurações" />} />
+        <Route path="/settings" element={<Navigate to="/settings/printer" replace />} />
+        <Route path="/settings/printer" element={<PrinterSettingsPage />} />
       </Route>
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

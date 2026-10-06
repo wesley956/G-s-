@@ -1,5 +1,6 @@
 import { Minus, Plus, Search, ShoppingCart, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ReceiptDialog } from "../components/receipts/ReceiptDialog";
 import { listActiveCustomers } from "../services/customerService";
 import { formatCurrency } from "../services/productService";
 import { completeSale, listSaleProducts } from "../services/saleService";
@@ -28,6 +29,9 @@ export function NewSalePage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [lastSaleId, setLastSaleId] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<{ saleId: string; autoCopies?: 1 | 2 } | null>(null);
 
   async function loadBaseData() {
     const [productRows, customerRows] = await Promise.all([
@@ -38,7 +42,9 @@ export function NewSalePage() {
     setCustomers(customerRows);
   }
 
-  useEffect(() => { void loadBaseData(); }, []);
+  useEffect(() => {
+    void loadBaseData().catch((err) => setError(err instanceof Error ? err.message : "Não foi possível carregar os dados."));
+  }, []);
 
   const filteredProducts = useMemo(() => {
     const term = query.trim().toLocaleLowerCase("pt-BR");
@@ -90,6 +96,7 @@ export function NewSalePage() {
   }
 
   async function finish() {
+    if (savingRef.current) return;
     setError(null);
     setFeedback(null);
 
@@ -109,6 +116,7 @@ export function NewSalePage() {
       receivedCents: paymentMethod === "CASH" ? receivedCents : null,
     }];
 
+    savingRef.current = true;
     setSaving(true);
     try {
       const result = await completeSale({
@@ -119,15 +127,24 @@ export function NewSalePage() {
         payments,
       });
       setFeedback(`Venda #${result.saleNumber} finalizada — ${formatCurrency(result.totalCents)}`);
+      setLastSaleId(result.saleId);
       setCart([]);
       setDiscount("");
       setReceived("");
       if (paymentMethod !== "CREDIT_CUSTOMER") setCustomerId("");
-      await loadBaseData();
+      if (result.printMode !== "NEVER") {
+        setReceipt({
+          saleId: result.saleId,
+          autoCopies: result.printMode === "AUTO_ONE" ? 1 : result.printMode === "AUTO_TWO" ? 2 : undefined,
+        });
+      }
+      try { await loadBaseData(); }
+      catch { setError("A venda foi salva, mas não foi possível atualizar a lista de produtos. Reabra a tela antes de vender novamente."); }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível finalizar a venda.");
     } finally {
       setSaving(false);
+      savingRef.current = false;
     }
   }
 
@@ -241,12 +258,14 @@ export function NewSalePage() {
 
           {error && <div className="feedback error">{error}</div>}
           {feedback && <div className="feedback success">{feedback}</div>}
+          {lastSaleId && <button className="secondary-button" disabled={saving} onClick={() => setReceipt({ saleId: lastSaleId })}>Ver / imprimir último comprovante</button>}
 
           <button className="primary-button finish-sale-button" disabled={saving || cart.length === 0 || total <= 0} onClick={finish}>
             {saving ? "Finalizando..." : "Finalizar venda"}
           </button>
         </aside>
       </div>
+      {receipt && <ReceiptDialog key={receipt.saleId} saleId={receipt.saleId} autoCopies={receipt.autoCopies} onClose={() => setReceipt(null)} />}
     </section>
   );
 }
