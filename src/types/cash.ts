@@ -35,6 +35,7 @@ export type CashTransaction = {
   amount_cents: number;
   description: string | null;
   created_at: string;
+  expense_refund?: number;
 };
 
 export type CashSummary = {
@@ -51,6 +52,10 @@ export type CashSummary = {
   suppliesCents: number;
   withdrawalsCents: number;
   expensesCents: number;
+  cashExpensesCents: number;
+  pixExpensesCents: number;
+  debitExpensesCents: number;
+  creditExpensesCents: number;
   reversalsCents: number;
   expectedCashCents: number;
   totalSalesCents: number;
