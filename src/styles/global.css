@@ -648,8 +648,9 @@ textarea {
 .supplier-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
 .supplier-fields:disabled { opacity: .7; }
 
-.expense-filters { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(2, 145px) minmax(150px, 1fr) 130px; gap: 12px; align-items: end; }
-.expense-filters .field { margin: 0; }
+.expense-filters { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(2, 170px) minmax(200px, 1fr) 140px; gap: 12px; align-items: end; }
+.expense-filters .field { margin: 0; min-width: 0; }
+.expense-filters input, .expense-filters select { min-width: 0; width: 100%; }
 .expense-metrics { grid-template-columns: repeat(3, 1fr); margin: 20px 0; }
 .expense-detail { display: block; margin-top: 6px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .data-table .expense-detail { max-width: 360px; }

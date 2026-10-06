@@ -8,7 +8,7 @@ let browser,page;
 try {
  await nativeOperation('tmp/browser-test.db',{id:crypto.randomUUID(),kind:'CASH_MOVE',data:{sessionId:'cash',type:'EXPENSE',amountCents:500,description:'Avulsa antiga'}});
  db.exec("INSERT INTO suppliers(id,name) VALUES ('vendor','Água d’Oeste')");
- browser=await chromium.launch({executablePath:process.env.GAS_BROWSER_EXECUTABLE,headless:true,args:['--no-sandbox']});page=await browser.newPage({viewport:{width:1366,height:1000}});
+ browser=await chromium.launch({executablePath:process.env.GAS_BROWSER_EXECUTABLE,headless:true,args:['--no-sandbox']});page=await browser.newPage({viewport:{width:1366,height:1000},locale:"pt-BR",timezoneId:"America/Sao_Paulo"});
  const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
  await page.goto('http://127.0.0.1:1420/#/expenses');await page.getByRole('row').filter({hasText:'Avulsa antiga'}).waitFor();
  await page.getByRole('link',{name:'Nova despesa',exact:true}).click();await page.getByLabel('Descrição *').fill('Transporte de água');await page.getByLabel('Categoria *').fill('Transporte');await page.getByLabel('Valor pago *').fill('120,00');await page.getByLabel('Fornecedor',{exact:true}).selectOption('vendor');await page.getByLabel('Observações').fill('Pagamento conferido');

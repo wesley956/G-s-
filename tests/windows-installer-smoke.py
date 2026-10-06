@@ -17,6 +17,9 @@ if mode == 'prepare-restore':
         copy.backup(target)
         # Exercise recovery of the previous release and the actual SQL plugin upgrade.
         target.executescript('DROP TABLE account_payment_refunds; DROP TABLE account_payment_receipts; DROP TABLE expense_refunds; DROP TABLE expenses; DROP TABLE suppliers; DELETE FROM _sqlx_migrations WHERE version>4;')
+        target.execute("INSERT INTO cash_sessions(id,status,opening_balance_cents,closing_expected_cents,closing_informed_cents,closed_at) VALUES ('smoke-legacy-cash','CLOSED',500,375,375,'2026-01-01 12:00:00')")
+        target.execute("INSERT INTO cash_transactions(id,cash_session_id,type,amount_cents,description,created_at) VALUES ('smoke-legacy-out','smoke-legacy-cash','EXPENSE',125,'Avulsa preservada','2026-01-01 10:00:00')")
+        target.commit()
     marker = {'sha256': hashlib.sha256(stage.read_bytes()).hexdigest(),
               'preventive_backup_id': f'gs-backup-{int(time.time()*1000)}-{uuid.uuid4()}.sqlite'}
     (root / 'restore-pending.json').write_text(json.dumps(marker))
@@ -28,13 +31,16 @@ elif mode == 'verify-restore':
         assert db.execute('SELECT MAX(version) FROM _sqlx_migrations WHERE success=1').fetchone()[0] == 7
         assert db.execute("SELECT COUNT(*) FROM account_payment_receipts").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM suppliers").fetchone()[0] == 0
-        assert db.execute("SELECT COUNT(*) FROM expenses").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM expenses").fetchone()[0] == 1
+        assert db.execute("SELECT category,origin FROM expenses WHERE cash_transaction_id='smoke-legacy-out'").fetchone() == ('Outras','LEGACY')
+        assert db.execute("SELECT amount_cents,created_at FROM cash_transactions WHERE id='smoke-legacy-out'").fetchone() == (125,'2026-01-01 10:00:00')
+        assert db.execute("SELECT closing_expected_cents FROM cash_sessions WHERE id='smoke-legacy-cash'").fetchone()[0] == 375
         assert db.execute("SELECT COUNT(*) FROM customers WHERE id='smoke-before-restore'").fetchone()[0] == 0
     marker = json.loads((root / 'smoke-preventive.json').read_text())
     with connect(root / 'backups' / marker['preventive_backup_id']) as copy:
         assert copy.execute("SELECT COUNT(*) FROM customers WHERE id='smoke-before-restore'").fetchone()[0] == 1
         assert copy.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
-    print('PASS: real installed startup restored a v4 backup, upgraded to v7 and kept a preventive copy')
+    print('PASS: real installed startup restored a v4 backup, upgraded to v7, preserved the legacy expense/closed cash and kept a preventive copy')
 elif mode == 'seed-reinstall':
     with sqlite3.connect(live) as db:
         db.execute("INSERT INTO customers(id,name) VALUES ('smoke-reinstall','Dado preservado')")
