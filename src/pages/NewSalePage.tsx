@@ -1,7 +1,9 @@
 import { Minus, Plus, Search, ShoppingCart, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { listActiveCustomers } from "../services/customerService";
 import { formatCurrency } from "../services/productService";
 import { completeSale, listSaleProducts } from "../services/saleService";
+import type { Customer } from "../types/customer";
 import type { PaymentInput, PaymentMethod, SaleCartItem, SaleProduct, SaleType } from "../types/sale";
 
 const paymentLabels: Record<PaymentMethod, string> = {
@@ -14,24 +16,29 @@ const paymentLabels: Record<PaymentMethod, string> = {
 
 export function NewSalePage() {
   const [products, setProducts] = useState<SaleProduct[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [cart, setCart] = useState<SaleCartItem[]>([]);
   const [saleType, setSaleType] = useState<SaleType>("COUNTER");
   const [query, setQuery] = useState("");
   const [discount, setDiscount] = useState("");
   const [discountMode, setDiscountMode] = useState<"VALUE" | "PERCENT">("VALUE");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
+  const [customerId, setCustomerId] = useState("");
   const [received, setReceived] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  async function loadProducts() {
-    setProducts(await listSaleProducts());
+  async function loadBaseData() {
+    const [productRows, customerRows] = await Promise.all([
+      listSaleProducts(),
+      listActiveCustomers(),
+    ]);
+    setProducts(productRows);
+    setCustomers(customerRows);
   }
 
-  useEffect(() => {
-    void loadProducts();
-  }, []);
+  useEffect(() => { void loadBaseData(); }, []);
 
   const filteredProducts = useMemo(() => {
     const term = query.trim().toLocaleLowerCase("pt-BR");
@@ -85,10 +92,12 @@ export function NewSalePage() {
   async function finish() {
     setError(null);
     setFeedback(null);
-    if (paymentMethod === "CREDIT_CUSTOMER") {
-      setError("O fiado será liberado junto com o cadastro de clientes na próxima etapa.");
+
+    if (paymentMethod === "CREDIT_CUSTOMER" && !customerId) {
+      setError("Selecione o cliente para vender fiado.");
       return;
     }
+
     if (paymentMethod === "CASH" && receivedCents < total) {
       setError("O valor recebido em dinheiro é menor que o total.");
       return;
@@ -104,6 +113,7 @@ export function NewSalePage() {
     try {
       const result = await completeSale({
         saleType,
+        customerId: customerId || null,
         items: cart,
         discountCents: safeDiscount,
         payments,
@@ -112,7 +122,8 @@ export function NewSalePage() {
       setCart([]);
       setDiscount("");
       setReceived("");
-      await loadProducts();
+      if (paymentMethod !== "CREDIT_CUSTOMER") setCustomerId("");
+      await loadBaseData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível finalizar a venda.");
     } finally {
@@ -159,10 +170,7 @@ export function NewSalePage() {
 
         <aside className="panel sale-cart">
           <div className="panel-heading-row">
-            <div>
-              <p className="eyebrow">Carrinho</p>
-              <h2>Venda atual</h2>
-            </div>
+            <div><p className="eyebrow">Carrinho</p><h2>Venda atual</h2></div>
             <ShoppingCart size={20} className="muted" />
           </div>
 
@@ -171,10 +179,7 @@ export function NewSalePage() {
               const unit = saleType === "COUNTER" ? item.product.counter_price_cents : item.product.delivery_price_cents;
               return (
                 <div className="cart-item" key={item.product.id}>
-                  <div>
-                    <strong>{item.product.name}</strong>
-                    <span>{formatCurrency(unit)} cada</span>
-                  </div>
+                  <div><strong>{item.product.name}</strong><span>{formatCurrency(unit)} cada</span></div>
                   <div className="qty-control">
                     <button onClick={() => changeQty(item.product.id, -1)}><Minus size={15} /></button>
                     <b>{item.quantity}</b>
@@ -203,15 +208,21 @@ export function NewSalePage() {
             <span className="field-label">Pagamento</span>
             <div className="payment-grid">
               {(Object.keys(paymentLabels) as PaymentMethod[]).map((method) => (
-                <button
-                  key={method}
-                  className={paymentMethod === method ? "selected" : ""}
-                  onClick={() => setPaymentMethod(method)}
-                >
+                <button key={method} className={paymentMethod === method ? "selected" : ""} onClick={() => setPaymentMethod(method)}>
                   {paymentLabels[method]}
                 </button>
               ))}
             </div>
+
+            <label className="field sale-customer-field">
+              <span>Cliente {paymentMethod === "CREDIT_CUSTOMER" ? "*" : "(opcional)"}</span>
+              <select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+                <option value="">Selecione...</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>{customer.name}</option>
+                ))}
+              </select>
+            </label>
 
             {paymentMethod === "CASH" && (
               <>
@@ -221,6 +232,10 @@ export function NewSalePage() {
                 </label>
                 <div className="change-box"><span>Troco</span><strong>{formatCurrency(change)}</strong></div>
               </>
+            )}
+
+            {paymentMethod === "CREDIT_CUSTOMER" && (
+              <div className="credit-notice">O valor será lançado automaticamente na caderneta do cliente.</div>
             )}
           </div>
 

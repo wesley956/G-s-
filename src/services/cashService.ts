@@ -49,7 +49,7 @@ export async function listCashTransactions(sessionId: string) {
 
 export async function addCashTransaction(input: {
   sessionId: string;
-  type: Exclude<CashTransactionType, "SALE" | "REVERSAL">;
+  type: "SUPPLY" | "WITHDRAWAL" | "EXPENSE";
   amount: string;
   description: string;
 }) {
@@ -61,25 +61,13 @@ export async function addCashTransaction(input: {
     `INSERT INTO cash_transactions
       (id, cash_session_id, type, amount_cents, description)
      VALUES (?, ?, ?, ?, ?)`,
-    [
-      crypto.randomUUID(),
-      input.sessionId,
-      input.type,
-      amountCents,
-      input.description.trim() || null,
-    ],
+    [crypto.randomUUID(), input.sessionId, input.type, amountCents, input.description.trim() || null],
   );
 }
 
 export async function getCashSummary(session: CashSession) {
   const db = await getDb();
-  const rows = await db.select<
-    {
-      type: CashTransactionType;
-      payment_method: string | null;
-      total: number;
-    }[]
-  >(
+  const rows = await db.select<{ type: CashTransactionType; payment_method: string | null; total: number }[]>(
     `SELECT type, payment_method, COALESCE(SUM(amount_cents), 0) AS total
      FROM cash_transactions
      WHERE cash_session_id = ?
@@ -94,6 +82,10 @@ export async function getCashSummary(session: CashSession) {
     debitSalesCents: 0,
     creditSalesCents: 0,
     customerCreditCents: 0,
+    receiptCashCents: 0,
+    receiptPixCents: 0,
+    receiptDebitCents: 0,
+    receiptCreditCents: 0,
     suppliesCents: 0,
     withdrawalsCents: 0,
     expensesCents: 0,
@@ -112,6 +104,13 @@ export async function getCashSummary(session: CashSession) {
       if (row.payment_method === "CREDIT_CUSTOMER") summary.customerCreditCents += row.total;
     }
 
+    if (row.type === "RECEIPT") {
+      if (row.payment_method === "CASH") summary.receiptCashCents += row.total;
+      if (row.payment_method === "PIX") summary.receiptPixCents += row.total;
+      if (row.payment_method === "DEBIT_CARD") summary.receiptDebitCents += row.total;
+      if (row.payment_method === "CREDIT_CARD") summary.receiptCreditCents += row.total;
+    }
+
     if (row.type === "SUPPLY") summary.suppliesCents += row.total;
     if (row.type === "WITHDRAWAL") summary.withdrawalsCents += row.total;
     if (row.type === "EXPENSE") summary.expensesCents += row.total;
@@ -121,6 +120,7 @@ export async function getCashSummary(session: CashSession) {
   summary.expectedCashCents =
     summary.openingBalanceCents +
     summary.cashSalesCents +
+    summary.receiptCashCents +
     summary.suppliesCents -
     summary.withdrawalsCents -
     summary.expensesCents -
@@ -150,14 +150,7 @@ export async function closeCashRegister(input: {
            ELSE notes || char(10) || ?
          END
      WHERE id = ? AND status = 'OPEN'`,
-    [
-      summary.expectedCashCents,
-      informedCents,
-      input.notes.trim(),
-      input.notes.trim(),
-      input.notes.trim(),
-      input.session.id,
-    ],
+    [summary.expectedCashCents, informedCents, input.notes.trim(), input.notes.trim(), input.notes.trim(), input.session.id],
   );
 
   return {

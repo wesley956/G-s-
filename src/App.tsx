@@ -1,6 +1,10 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
+import { AccountsPage } from "./pages/AccountsPage";
 import { CashRegisterPage } from "./pages/CashRegisterPage";
+import { CustomerAccountPage } from "./pages/CustomerAccountPage";
+import { CustomerFormPage } from "./pages/CustomerFormPage";
+import { CustomersPage } from "./pages/CustomersPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { NewSalePage } from "./pages/NewSalePage";
@@ -19,8 +23,10 @@ export default function App() {
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/products/new" element={<ProductFormPage />} />
         <Route path="/inventory" element={<InventoryPage />} />
-        <Route path="/customers" element={<PlaceholderPage title="Clientes" />} />
-        <Route path="/accounts" element={<PlaceholderPage title="Cadernetas" />} />
+        <Route path="/customers" element={<CustomersPage />} />
+        <Route path="/customers/new" element={<CustomerFormPage />} />
+        <Route path="/accounts" element={<AccountsPage />} />
+        <Route path="/accounts/:customerId" element={<CustomerAccountPage />} />
         <Route path="/cash" element={<CashRegisterPage />} />
         <Route path="/expenses" element={<PlaceholderPage title="Despesas" />} />
         <Route path="/suppliers" element={<PlaceholderPage title="Fornecedores" />} />
