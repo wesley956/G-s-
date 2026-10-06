@@ -54,7 +54,7 @@ export function AuditPage() {
   return <section className="audit-page" aria-busy={busy}>
     <header className="page-header"><div><p className="eyebrow">Histórico local</p><h1>Auditoria</h1><p className="muted">Consulte operações confirmadas e os dados preservados no depósito.</p></div></header>
     <div className="panel audit-coverage"><h2>O que aparece aqui</h2>
-      <p>Vendas, cancelamentos, estoque, caderneta, despesas, caixa, produtos, fornecedores e categorias registrados pelas operações nativas.</p>
+      <p>Operações de vendas, cancelamentos, estoque, caderneta, despesas, caixa, produtos, fornecedores e categorias disponíveis no histórico local.</p>
       <p className="muted">Cadastro e situação de clientes, ativação rápida de produtos, preferências e backups não fazem parte deste histórico. Operações anteriores ao registro também podem não aparecer. Não há identificação do operador nem reconstrução de valores anteriores ausentes.</p>
     </div>
     <form className="panel audit-filters" onSubmit={event => { event.preventDefault(); void load({ ...filters, page: 1, anchor: null }); }}>
