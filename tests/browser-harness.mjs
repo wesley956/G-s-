@@ -28,6 +28,8 @@ window.addEventListener('unhandledrejection', e => window.__consoleErrors.push(S
 window.__printRequests = [];
 window.print = () => { const root = document.querySelector('#receipt-print-root'); window.__printRequests.push(root?.innerText || 'MISSING'); };
 window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
+  if (command === 'export_report_csv' && window.__failReportExport) throw new Error('Falha simulada ao salvar CSV');
+  if (command === 'export_report_csv') args = { ...args, cancelExport: Boolean(window.__cancelReportExport) };
   if (command === 'save_receipt_pdf' && window.__cancelPdf) return null;
   if (command === 'save_receipt_pdf' && window.__failPdf) throw new Error('Falha simulada ao salvar PDF');
   if (command === 'restore_backup' && window.__cancelRestore) return false;
@@ -76,6 +78,13 @@ export const server = await createServer({
           const { copyFile } = await import("node:fs/promises");
           const path = `tmp/exported/${args.backupId}`;
           await copyFile(`tmp/browser-backups/${args.backupId}`,path); value=path;
+        }
+        else if (command === "get_report") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"REPORT_READ",data:args.period});
+        else if (command === "export_report_csv") {
+          const exported=await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"REPORT_EXPORT",data:args.period});
+          let path=null;
+          if (!args.cancelExport) {await mkdir("tmp/csv",{recursive:true});path=`tmp/csv/report-${crypto.randomUUID()}.csv`;await writeFile(path,exported.csv,{flag:'wx'});}
+          value={path,report:exported.report};
         }
         else if (command === "write_operation") value = await nativeOperation(dbPath, args.operation);
         else if (command === "save_receipt_pdf") {

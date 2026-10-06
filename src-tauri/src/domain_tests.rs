@@ -442,3 +442,75 @@ async fn expense_backup_reopens_history_replay_and_rejects_incomplete_v7(){
  let copy=f.dir.path().join("expenses.sqlite");backup::snapshot(&f.pool,&copy).await.unwrap();backup::validate_restore(&copy).await.unwrap();let reopened=connect(&copy).await;assert_eq!(apply(&reopened,op).await.unwrap(),expense);assert_eq!(count(&reopened,"expense_refunds").await,1);reopened.close().await;
  let damaged=connect(&copy).await;damaged.execute("ALTER TABLE expenses DROP COLUMN notes").await.unwrap();damaged.close().await;assert!(backup::validate_restore(&copy).await.unwrap_err().contains("expenses.notes"));
 }
+
+fn report_period(start:&str,end:&str)->reports::Period {reports::Period{start:start.into(),end:end.into()}}
+async fn report_day(pool:&SqlitePool,day:&str)->reports::Report {reports::read(pool,report_period(day,day)).await.unwrap()}
+async fn date_events(pool:&SqlitePool,day:&str) {
+ let time=format!("{day} 12:00:00");
+ for (table,column) in [("sales","completed_at"),("cash_transactions","created_at"),("cash_sessions","opened_at")] {
+  sqlx::query(&format!("UPDATE {table} SET {column}=?")).bind(&time).execute(pool).await.unwrap();
+ }
+}
+#[tokio::test]
+async fn reports_mixed_discount_partial_receipt_refund_and_expenses_reconcile_without_writes(){
+ let f=setup().await;apply(&f.pool,operation("SALE",input())).await.unwrap();
+ let payment=receive_id(&f.pool,2000,"CASH").await;apply(&f.pool,refund(&payment)).await.unwrap();
+ for method in ["CASH","PIX","DEBIT_CARD","CREDIT_CARD"] {let expense=apply(&f.pool,operation("EXPENSE",expense_input(method,1001))).await.unwrap();apply(&f.pool,expense_refund(&expense,"cash")).await.unwrap();}
+ apply(&f.pool,operation("CASH_MOVE",json!({"sessionId":"cash","type":"SUPPLY","amountCents":500}))).await.unwrap();
+ apply(&f.pool,operation("CASH_MOVE",json!({"sessionId":"cash","type":"WITHDRAWAL","amountCents":300}))).await.unwrap();
+ date_events(&f.pool,"2026-01-10").await;
+ let before=count(&f.pool,"operation_results").await;let movements=count(&f.pool,"cash_transactions").await;
+ let r=report_day(&f.pool,"2026-01-10").await;
+ assert_eq!(r.sales["grossCents"],12000);assert_eq!(r.sales["discountCents"],1000);assert_eq!(r.sales["netCents"],11000);
+ let cash=r.methods.iter().find(|m|m["method"]=="CASH").unwrap();assert_eq!(cash["salesCents"],6000);assert_eq!(cash["receiptsCents"],2000);assert_eq!(cash["receiptRefundCents"],2000);assert_eq!(cash["expensesCents"],1001);assert_eq!(cash["expenseRefundCents"],1001);
+ assert_eq!(r.cash["inCents"],9501);assert_eq!(r.cash["outCents"],3301);assert_eq!(r.cash["netCents"],6200);assert_eq!(r.cash["suppliesCents"],500);
+ assert_eq!(r.cash["openingCents"].as_i64().unwrap()+r.cash["netCents"].as_i64().unwrap(),expected(&f.pool,"cash").await);
+ assert_eq!(r.accounts[0]["balanceCents"],5000);assert_eq!(r.stock[0]["quantity"],9.0);
+ assert_eq!(r.expenses[0]["paidCents"],4004);assert_eq!(r.expenses[0]["refundedCents"],4004);
+ assert_eq!(count(&f.pool,"operation_results").await,before);assert_eq!(count(&f.pool,"cash_transactions").await,movements);
+}
+#[tokio::test]
+async fn reports_late_refunds_use_event_day_and_preserve_original_closed_cash(){
+ let f=setup().await;let mut sale=input();sale["payments"]=json!([{"method":"CASH","amountCents":11000,"receivedCents":11000}]);
+ let sale=apply(&f.pool,operation("SALE",sale)).await.unwrap();let expense=apply(&f.pool,operation("EXPENSE",expense_input("CASH",1001))).await.unwrap();
+ date_events(&f.pool,"2026-01-10").await;
+ apply(&f.pool,operation("CLOSE_CASH",json!({"sessionId":"cash","informedCents":20000}))).await.unwrap();
+ f.pool.execute("UPDATE cash_sessions SET closed_at='2026-01-10 13:00:00' WHERE id='cash'").await.unwrap();
+ let next=apply(&f.pool,operation("OPEN_CASH",json!({"amountCents":20000}))).await.unwrap();
+ apply(&f.pool,operation("CANCEL_SALE",json!({"saleId":sale["saleId"],"reason":"Cliente devolveu"}))).await.unwrap();apply(&f.pool,expense_refund(&expense,next.as_str().unwrap())).await.unwrap();
+ f.pool.execute("UPDATE sales SET cancelled_at='2026-01-11 12:00:00'; UPDATE cash_transactions SET created_at='2026-01-11 12:00:00' WHERE type IN ('REVERSAL','SUPPLY'); UPDATE cash_sessions SET opened_at='2026-01-11 12:00:00' WHERE status='OPEN'").await.unwrap();
+ let old=report_day(&f.pool,"2026-01-10").await;let new=report_day(&f.pool,"2026-01-11").await;
+ assert_eq!(old.sales["netCents"],11000);assert_eq!(old.sales["cancelledCents"],0);assert_eq!(old.cash["netCents"],9999);assert_eq!(old.cash["closingDifferenceCents"],1);assert_eq!(old.closings[0]["expectedCents"],19999);
+ assert_eq!(new.sales["soldCents"],0);assert_eq!(new.sales["netCents"],-11000);assert_eq!(new.products[0]["soldQuantity"],0.0);assert_eq!(new.products[0]["cancelledQuantity"],1.0);assert_eq!(new.expenses[0]["paidCents"],0);assert_eq!(new.expenses[0]["refundedCents"],1001);assert_eq!(new.cash["suppliesCents"],0);assert_eq!(new.cash["netCents"],-9999);
+ let both=reports::read(&f.pool,report_period("2026-01-10","2026-01-11")).await.unwrap();assert_eq!(both.sales["netCents"],0);assert_eq!(both.cash["netCents"],0);assert_eq!(both.closings[0]["expectedCents"],19999);
+}
+#[tokio::test]
+async fn reports_keep_historical_names_and_current_inactive_accounts_stock_after_backup(){
+ let f=setup().await;apply(&f.pool,operation("SALE",input())).await.unwrap();let supplier=apply(&f.pool,operation("SUPPLIER",supplier_input())).await.unwrap();
+ let mut expense=expense_input("PIX",1234);expense["supplierId"]=supplier;apply(&f.pool,operation("EXPENSE",expense)).await.unwrap();date_events(&f.pool,"2026-01-10").await;
+ f.pool.execute("UPDATE products SET name='Novo nome',active=0; UPDATE customers SET active=0; UPDATE suppliers SET name='Novo fornecedor',active=0").await.unwrap();
+ let r=report_day(&f.pool,"2026-01-10").await;assert_eq!(r.products[0]["name"],"Gás P13");assert_eq!(r.expenses[0]["supplier"],"Águas São João");assert_eq!(r.stock[0]["name"],"Novo nome");assert_eq!(r.stock[0]["active"],false);assert_eq!(r.accounts[0]["active"],false);
+ let empty=report_day(&f.pool,"2099-01-01").await;assert_eq!(empty.sales["netCents"],0);assert!(empty.movements.is_empty());assert_eq!(empty.accounts,r.accounts);assert_eq!(empty.stock,r.stock);
+ let copy=f.dir.path().join("reports.sqlite");backup::snapshot(&f.pool,&copy).await.unwrap();backup::validate_restore(&copy).await.unwrap();let reopened=connect(&copy).await;let saved=report_day(&reopened,"2026-01-10").await;assert_eq!(saved.sales,r.sales);assert_eq!(saved.methods,r.methods);assert_eq!(saved.expenses,r.expenses);assert_eq!(saved.closings,r.closings);reopened.close().await;
+}
+#[tokio::test]
+async fn reports_reject_invalid_periods_and_include_both_endpoints(){
+ let f=setup().await;
+ for (start,end) in [("2026-02-30","2026-03-01"),("2026-1-01","2026-01-10"),("2026-01-11","2026-01-10"),("","2026-01-01")] {assert!(reports::read(&f.pool,report_period(start,end)).await.is_err());}
+ f.pool.execute("INSERT INTO cash_transactions(id,cash_session_id,type,amount_cents,created_at) VALUES ('first','cash','SUPPLY',1,'2026-01-10 12:00:00'),('last','cash','SUPPLY',2,'2026-01-11 12:00:00'),('outside','cash','SUPPLY',4,'2026-01-12 12:00:00')").await.unwrap();
+ let r=reports::read(&f.pool,report_period("2026-01-10","2026-01-11")).await.unwrap();assert_eq!(r.cash["suppliesCents"],3);assert_eq!(r.movements.len(),2);assert_eq!(count(&f.pool,"operation_results").await,0);
+}
+#[tokio::test]
+async fn reports_csv_protects_text_formulas_preserves_cents_quotes_and_native_files(){
+ let f=setup().await;
+ let mut expense=expense_input("PIX",1001);expense["description"]=json!(" =SUM(1;2)\n\"Água\"");expense["category"]=json!("@Categoria");apply(&f.pool,operation("EXPENSE",expense)).await.unwrap();date_events(&f.pool,"2026-01-10").await;
+ let mut r=report_day(&f.pool,"2026-01-10").await;r.sales["netCents"]=json!(-1001);r.accounts=vec![json!({"id":"a","name":"\t+cmd","balanceCents":1,"active":true}),json!({"id":"b","name":"\u{2003}-cmd","balanceCents":1,"active":false})];
+ r.movements[0]["description"]=json!(" =SUM(1;2)\n\"Água\"");let csv=reports::csv(&r).unwrap();assert!(csv.starts_with("\u{feff}\"Seção\""));assert!(csv.contains("\"Valor (R$)\";\"Quantidade\""));assert!(csv.contains("\"' =SUM(1;2)\n\"\"Água\"\"\""));assert!(csv.contains("\"'@Categoria\""));assert!(csv.contains("\"'\t+cmd\""));assert!(csv.contains("\"'\u{2003}-cmd\""));assert!(csv.contains("\"-10,01\""));assert!(csv.ends_with("\r\n"));
+ assert_eq!(reports::money(i64::MIN),"-92233720368547758,08");let path=f.dir.path().join("report.csv");reports::save_csv_new(&path,&csv).unwrap();assert_eq!(std::fs::read_to_string(&path).unwrap(),csv);
+ assert!(reports::save_csv_new(&path,"replacement").is_err());assert_eq!(std::fs::read_to_string(&path).unwrap(),csv);assert!(reports::save_csv_new(&f.dir.path().join("missing/report.csv"),&csv).is_err());assert_eq!(count(&f.pool,"expenses").await,1);
+}
+#[tokio::test]
+async fn reports_unlinked_legacy_reversal_affects_cash_without_guessing_financial_origin(){
+ let f=setup().await;f.pool.execute("INSERT INTO cash_transactions(id,cash_session_id,type,payment_method,amount_cents,created_at) VALUES ('legacy','cash','REVERSAL','CASH',123,'2026-01-10 12:00:00')").await.unwrap();
+ let r=report_day(&f.pool,"2026-01-10").await;assert_eq!(r.cash["netCents"],-123);assert_eq!(r.cash["unknownRefundCents"],123);assert_eq!(r.sales["netCents"],0);assert!(r.methods.is_empty());assert_eq!(r.movements[0]["kind"],"UNKNOWN_REFUND");
+}

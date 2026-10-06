@@ -1,0 +1,15 @@
+.report-filters { display:flex; align-items:flex-end; flex-wrap:wrap; gap:16px; }
+.report-filters .field { margin:0; flex:1; max-width:260px; }
+.report-filters button { display:inline-flex; align-items:center; gap:8px; min-height:44px; }
+.report-period { margin-top:22px; }
+.report-tabs { display:flex; flex-wrap:wrap; gap:8px; margin:24px 0; }
+.report-tabs [aria-pressed="true"] { background:#164e63; border-color:#22d3ee; color:#ecfeff; }
+.report-metrics { grid-template-columns:repeat(4,minmax(0,1fr)); }
+.report-metrics strong { font-variant-numeric:tabular-nums; white-space:nowrap; font-size:clamp(18px,2vw,26px); }
+.report-table table { min-width:650px; }
+.report-table td { white-space:nowrap; font-variant-numeric:tabular-nums; }
+.report-table th { text-align:left; }
+.report-table tbody th { padding:14px 13px; min-width:140px; max-width:280px; overflow-wrap:anywhere; }
+.report-table td.report-text { white-space:normal; min-width:180px; max-width:320px; overflow-wrap:anywhere; }
+.reports-page h2 { margin-top:28px; }
+@media(max-width:1150px) { .report-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
