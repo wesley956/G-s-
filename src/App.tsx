@@ -3,8 +3,10 @@ import { AppShell } from "./components/layout/AppShell";
 import { CashRegisterPage } from "./pages/CashRegisterPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { InventoryPage } from "./pages/InventoryPage";
+import { NewSalePage } from "./pages/NewSalePage";
 import { ProductFormPage } from "./pages/ProductFormPage";
 import { ProductsPage } from "./pages/ProductsPage";
+import { SalesPage } from "./pages/SalesPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 
 export default function App() {
@@ -12,8 +14,8 @@ export default function App() {
     <Routes>
       <Route element={<AppShell />}>
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/sales/new" element={<PlaceholderPage title="Nova Venda" />} />
-        <Route path="/sales" element={<PlaceholderPage title="Vendas" />} />
+        <Route path="/sales/new" element={<NewSalePage />} />
+        <Route path="/sales" element={<SalesPage />} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/products/new" element={<ProductFormPage />} />
         <Route path="/inventory" element={<InventoryPage />} />
