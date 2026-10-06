@@ -67,6 +67,9 @@ jobs:
       - run: node tests/browser-reports.mjs
         env:
           GAS_PLAYWRIGHT_MODULE: playwright
+      - run: node tests/browser-dashboard.mjs
+        env:
+          GAS_PLAYWRIGHT_MODULE: playwright
   windows-native:
     runs-on: windows-latest
     steps:

@@ -28,6 +28,8 @@ window.addEventListener('unhandledrejection', e => window.__consoleErrors.push(S
 window.__printRequests = [];
 window.print = () => { const root = document.querySelector('#receipt-print-root'); window.__printRequests.push(root?.innerText || 'MISSING'); };
 window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
+  if (command === 'get_dashboard' && window.__failDashboard) throw new Error('Falha simulada ao consultar painel');
+  if (command === 'get_dashboard' && window.__delayDashboard) await new Promise(resolve => setTimeout(resolve, window.__delayDashboard));
   if (command === 'export_report_csv' && window.__failReportExport) throw new Error('Falha simulada ao salvar CSV');
   if (command === 'export_report_csv') args = { ...args, cancelExport: Boolean(window.__cancelReportExport) };
   if (command === 'save_receipt_pdf' && window.__cancelPdf) return null;
@@ -79,6 +81,7 @@ export const server = await createServer({
           const path = `tmp/exported/${args.backupId}`;
           await copyFile(`tmp/browser-backups/${args.backupId}`,path); value=path;
         }
+        else if (command === "get_dashboard") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"DASHBOARD_READ",data:{}});
         else if (command === "get_report") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"REPORT_READ",data:args.period});
         else if (command === "export_report_csv") {
           const exported=await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"REPORT_EXPORT",data:args.period});

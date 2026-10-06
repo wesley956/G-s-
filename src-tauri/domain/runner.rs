@@ -8,6 +8,7 @@ async fn main() {
     let pool=sqlx::sqlite::SqlitePoolOptions::new().max_connections(5).connect_with(options).await.unwrap();
     let operation:deposito_domain::Operation=serde_json::from_value(v["operation"].clone()).unwrap();
     let result = match operation.kind.as_str() {
+        "DASHBOARD_READ" => deposito_domain::dashboard::read(&pool).await.map(|d|serde_json::to_value(d).unwrap()),
         "REPORT_READ" | "REPORT_EXPORT" => {
             match serde_json::from_value(operation.data.clone()) {
                 Ok(period) => match deposito_domain::reports::read(&pool,period).await {

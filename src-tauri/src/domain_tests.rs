@@ -514,3 +514,55 @@ async fn reports_unlinked_legacy_reversal_affects_cash_without_guessing_financia
  let f=setup().await;f.pool.execute("INSERT INTO cash_transactions(id,cash_session_id,type,payment_method,amount_cents,created_at) VALUES ('legacy','cash','REVERSAL','CASH',123,'2026-01-10 12:00:00')").await.unwrap();
  let r=report_day(&f.pool,"2026-01-10").await;assert_eq!(r.cash["netCents"],-123);assert_eq!(r.cash["unknownRefundCents"],123);assert_eq!(r.sales["netCents"],0);assert!(r.methods.is_empty());assert_eq!(r.movements[0]["kind"],"UNKNOWN_REFUND");
 }
+
+#[tokio::test]
+async fn dashboard_empty_current_balances_include_inactive_debtors_and_active_low_stock(){
+ let f=setup().await;
+ let d=dashboard::read_on(&f.pool,Some("2099-01-01")).await.unwrap();
+ assert!(d.cash_open);assert_eq!(d.sold_cents,0);assert_eq!(d.sales_count,0);assert!(d.methods.is_empty());assert_eq!(d.debtors_count,0);
+ apply(&f.pool,operation("SALE",input())).await.unwrap();
+ f.pool.execute("UPDATE customers SET active=0; UPDATE products SET stock_quantity=0,minimum_stock=1").await.unwrap();
+ let d=dashboard::read_on(&f.pool,Some("2099-01-01")).await.unwrap();assert_eq!(d.credit_sales_cents,0);assert_eq!(d.balance_cents,5000);assert_eq!(d.debtors_count,1);assert_eq!(d.low_stock_count,1);
+ f.pool.execute("UPDATE products SET active=0").await.unwrap();assert_eq!(dashboard::read(&f.pool).await.unwrap().low_stock_count,0);
+ let payment=receive_id(&f.pool,5000,"PIX").await;let paid=dashboard::read(&f.pool).await.unwrap();assert_eq!(paid.debtors_count,0);assert_eq!(paid.balance_cents,0);
+ apply(&f.pool,refund(&payment)).await.unwrap();assert_eq!(dashboard::read(&f.pool).await.unwrap().debtors_count,1);
+}
+#[tokio::test]
+async fn dashboard_mixed_cents_receipts_refunds_and_expenses_remain_separate(){
+ let f=setup().await;let mut sale=input();sale["discountCents"]=json!(1001);sale["payments"]=json!([{"method":"CASH","amountCents":6000,"receivedCents":10000},{"method":"PIX","amountCents":999},{"method":"CREDIT_CUSTOMER","amountCents":4000}]);
+ apply(&f.pool,operation("SALE",sale)).await.unwrap();let payment=receive_id(&f.pool,1234,"CASH").await;
+ apply(&f.pool,refund(&payment)).await.unwrap();let expense=apply(&f.pool,operation("EXPENSE",expense_input("CASH",1001))).await.unwrap();apply(&f.pool,expense_refund(&expense,"cash")).await.unwrap();date_events(&f.pool,"2026-01-10").await;
+ let before=count(&f.pool,"operation_results").await;let d=dashboard::read_on(&f.pool,Some("2026-01-10")).await.unwrap();let report=report_day(&f.pool,"2026-01-10").await;
+ assert_eq!(d.sold_cents,10999);assert_eq!(d.credit_sales_cents,4000);assert_eq!(d.balance_cents,4000);assert_eq!(d.debtors_count,1);assert_eq!(d.cancelled_cents,0);
+ let cash=d.methods.iter().find(|m|m["method"]=="CASH").unwrap();assert_eq!(cash["salesCents"],6000);assert_eq!(cash["receiptsCents"],1234);assert_eq!(cash["receiptRefundCents"],1234);assert_eq!(d.methods.iter().map(|m|m["salesCents"].as_i64().unwrap()).sum::<i64>(),10999);
+ for method in &d.methods {let other=report.methods.iter().find(|m|m["method"]==method["method"]).unwrap();for key in ["salesCents","saleRefundCents","receiptsCents","receiptRefundCents"]{assert_eq!(method[key],other[key]);}}
+ assert_eq!(count(&f.pool,"operation_results").await,before);
+}
+#[tokio::test]
+async fn dashboard_late_cancellation_keeps_previous_day_and_closed_cash_after_backup(){
+ let f=setup().await;let mut sale=input();sale["payments"]=json!([{"method":"CASH","amountCents":11000,"receivedCents":12000}]);let s=apply(&f.pool,operation("SALE",sale)).await.unwrap();date_events(&f.pool,"2026-01-10").await;
+ apply(&f.pool,operation("CLOSE_CASH",json!({"sessionId":"cash","informedCents":21000}))).await.unwrap();apply(&f.pool,operation("OPEN_CASH",json!({"amountCents":20000}))).await.unwrap();
+ apply(&f.pool,operation("CANCEL_SALE",json!({"saleId":s["saleId"],"reason":"Devolução posterior"}))).await.unwrap();f.pool.execute("UPDATE sales SET cancelled_at='2026-01-11 12:00:00'").await.unwrap();
+ let old=dashboard::read_on(&f.pool,Some("2026-01-10")).await.unwrap();assert_eq!(old.sold_cents,11000);assert_eq!(old.cancelled_cents,0);
+ let next=dashboard::read_on(&f.pool,Some("2026-01-11")).await.unwrap();assert_eq!(next.sold_cents,0);assert_eq!(next.cancelled_cents,11000);assert_eq!(next.methods[0]["saleRefundCents"],11000);
+ assert_eq!(sqlx::query_scalar::<_,i64>("SELECT closing_expected_cents FROM cash_sessions WHERE id='cash'").fetch_one(&f.pool).await.unwrap(),21000);
+ let copy=f.dir.path().join("dashboard.sqlite");backup::snapshot(&f.pool,&copy).await.unwrap();backup::validate_restore(&copy).await.unwrap();let reopened=connect(&copy).await;let saved=dashboard::read_on(&reopened,Some("2026-01-11")).await.unwrap();assert_eq!(saved.cancelled_cents,next.cancelled_cents);assert_eq!(saved.methods,next.methods);reopened.close().await;
+}
+#[tokio::test]
+async fn dashboard_local_day_includes_midnight_and_last_second_without_adjacent_days(){
+ let f=setup().await;
+ for (id,local) in [("before","2026-01-09 23:59:59"),("first","2026-01-10 00:00:00"),("last","2026-01-10 23:59:59"),("next","2026-01-11 00:00:00")] {
+  sqlx::query("INSERT INTO cash_transactions(id,cash_session_id,type,payment_method,amount_cents,created_at) VALUES (?,'cash','RECEIPT','PIX',1,datetime(?,'utc'))").bind(id).bind(local).execute(&f.pool).await.unwrap();
+ }
+ let d=dashboard::read_on(&f.pool,Some("2026-01-10")).await.unwrap();assert_eq!(d.methods[0]["receiptsCents"],2);assert_eq!(d.sold_cents,0);
+ let current=dashboard::read(&f.pool).await.unwrap();let day=sqlx::query_scalar::<_,String>("SELECT date('now','localtime')").fetch_one(&f.pool).await.unwrap();assert_eq!(current.day,day);
+}
+#[tokio::test]
+async fn dashboard_reads_a_consistent_snapshot_during_concurrent_sales(){
+ let f=setup().await;
+ let writes=async {for _ in 0..8 {apply(&f.pool,operation("SALE",input())).await.unwrap();}};
+ let reads=async {for _ in 0..25 {
+  let d=dashboard::read(&f.pool).await.unwrap();assert_eq!(d.sold_cents,d.sales_count*11000);assert_eq!(d.credit_sales_cents,d.sales_count*5000);assert_eq!(d.balance_cents,d.credit_sales_cents);assert_eq!(d.methods.iter().map(|m|m["salesCents"].as_i64().unwrap()).sum::<i64>(),d.sold_cents);
+ }};
+ tokio::join!(writes,reads);assert_eq!(dashboard::read(&f.pool).await.unwrap().sales_count,8);
+}

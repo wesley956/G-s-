@@ -1,0 +1,9 @@
+.dashboard-page .page-header { flex-wrap:wrap; gap:16px; }
+.dashboard-page .page-header button { display:inline-flex; align-items:center; gap:8px; min-height:44px; }
+.dashboard-metrics strong { font-variant-numeric:tabular-nums; white-space:nowrap; font-size:clamp(18px,2vw,26px); }
+.dashboard-metrics small { display:block; overflow-wrap:anywhere; }
+.dashboard-table { margin-top:18px; }
+.dashboard-table table { min-width:640px; }
+.dashboard-table td { white-space:nowrap; font-variant-numeric:tabular-nums; }
+.dashboard-table th { text-align:left; }
+.dashboard-table tbody th { padding:14px 13px; }
