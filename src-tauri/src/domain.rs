@@ -89,6 +89,7 @@ async fn dispatch(tx: &mut Tx, kind: &str, v: &Value) -> Result<Value> {
     match kind {
         "SALE"=>sale(tx,v).await, "CANCEL_SALE"=>cancel_sale(tx,v).await,
         "STOCK"=>stock(tx,v).await, "RECEIVE"=>receive(tx,v).await,
+        "REFUND_RECEIPT"=>refund_receipt(tx,v).await,
         "OPEN_CASH"=>{
             let amount=money(v,"amountCents",true)?;
             if sqlx::query_scalar::<_,i64>("SELECT COUNT(*) FROM cash_sessions WHERE status='OPEN'").fetch_one(&mut **tx).await.map_err(|e|e.to_string())?>0 {return Err("Já existe um caixa aberto.".into());}
@@ -178,8 +179,8 @@ async fn cancel_sale(tx:&mut Tx,v:&Value)->Result<Value>{
     let s=sqlx::query("SELECT sale_number,cash_session_id,status FROM sales WHERE id=?").bind(sale_id).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?.ok_or("Venda não encontrada.")?;
     if s.get::<String,_>("status")!="COMPLETED"{return Err("Venda já cancelada ou não finalizada.".into());}
     // A paid credit sale needs an explicit refund flow; do not erase a paid debt.
-    let allocated:i64=sqlx::query_scalar("SELECT COALESCE(SUM(a.amount_cents),0) FROM account_payment_allocations a JOIN customer_account_entries d ON d.id=a.debit_id WHERE d.sale_id=?").bind(sale_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
-    if allocated>0{return Err("Esta venda fiado já recebeu pagamento. É necessário tratar a devolução do recebimento antes de cancelar.".into());}
+    let allocated:i64=sqlx::query_scalar("SELECT COALESCE(SUM(a.amount_cents),0) FROM account_payment_allocations a JOIN customer_account_entries d ON d.id=a.debit_id JOIN customer_account_entries p ON p.id=a.payment_id WHERE d.sale_id=? AND p.status<>'CANCELLED'").bind(sale_id).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;
+    if allocated>0{return Err("Esta venda fiado já recebeu pagamento. Estorne os recebimentos na caderneta do cliente antes de cancelar.".into());}
     let cash=open_cash(tx).await?;let number=s.get::<i64,_>("sale_number");
     let rows=sqlx::query("SELECT product_id,quantity FROM sale_items WHERE sale_id=?").bind(sale_id).fetch_all(&mut **tx).await.map_err(|e|e.to_string())?;
     for item in rows{let p=item.get::<String,_>("product_id");let qty=item.get::<f64,_>("quantity");
@@ -206,13 +207,43 @@ async fn receive(tx:&mut Tx,v:&Value)->Result<Value>{
     if amount>balance{return Err("O pagamento não pode ser maior que o saldo em aberto.".into());}
     let payment=id();let desc=optional(v,"description").unwrap_or("Pagamento de caderneta".into());
     exec(tx,"INSERT INTO customer_account_entries(id,customer_id,type,description,amount_cents,status) VALUES (?,?,'PAYMENT',?,?,'PAID')",vec![json!(payment),json!(cust),json!(desc),json!(amount)]).await?;
-    let debts=sqlx::query("SELECT d.id,d.amount_cents-COALESCE((SELECT SUM(amount_cents) FROM account_payment_allocations WHERE debit_id=d.id),0) remaining FROM customer_account_entries d WHERE d.customer_id=? AND d.type IN ('DEBIT','ADJUSTMENT') AND d.status<>'CANCELLED' ORDER BY d.created_at,d.id").bind(cust).fetch_all(&mut **tx).await.map_err(|e|e.to_string())?;
+    let debts=sqlx::query("SELECT d.id,d.amount_cents-COALESCE((SELECT SUM(a.amount_cents) FROM account_payment_allocations a JOIN customer_account_entries p ON p.id=a.payment_id WHERE a.debit_id=d.id AND p.status<>'CANCELLED'),0) remaining FROM customer_account_entries d WHERE d.customer_id=? AND d.type IN ('DEBIT','ADJUSTMENT') AND d.status<>'CANCELLED' ORDER BY d.created_at,d.id").bind(cust).fetch_all(&mut **tx).await.map_err(|e|e.to_string())?;
     let mut left=amount;for d in debts{if left==0{break;}let rem=d.get::<i64,_>("remaining");if rem<=0{continue;}let applied=left.min(rem);let debit=d.get::<String,_>("id");
         exec(tx,"INSERT INTO account_payment_allocations(payment_id,debit_id,amount_cents) VALUES (?,?,?)",vec![json!(payment),json!(debit),json!(applied)]).await?;
         exec(tx,"UPDATE customer_account_entries SET status=? WHERE id=?",vec![json!(if applied==rem{"PAID"}else{"PARTIAL"}),json!(debit)]).await?;left-=applied;
     }
     if left!=0{return Err("Saldo da caderneta inconsistente. Revise os lançamentos.".into());}
-    exec(tx,"INSERT INTO cash_transactions(id,cash_session_id,type,payment_method,amount_cents,description) VALUES (?,?,'RECEIPT',?,?,?)",vec![json!(id()),json!(cash),json!(m),json!(amount),json!(desc)]).await?;Ok(Value::Null)
+    let receipt=id();
+    exec(tx,"INSERT INTO cash_transactions(id,cash_session_id,type,payment_method,amount_cents,description) VALUES (?,?,'RECEIPT',?,?,?)",vec![json!(receipt),json!(cash),json!(m),json!(amount),json!(desc)]).await?;
+    exec(tx,"INSERT INTO account_payment_receipts(payment_id,receipt_transaction_id) VALUES (?,?)",vec![json!(payment),json!(receipt)]).await?;Ok(Value::Null)
+}
+async fn refund_receipt(tx:&mut Tx,v:&Value)->Result<Value>{
+    let payment=text(v,"paymentId")?;let cust=text(v,"customerId")?;
+    let reason=text(v,"reason")?.trim();if reason.is_empty(){return Err("Informe o motivo do estorno.".into());}
+    customer(tx,cust,false).await?;
+    let row=sqlx::query("SELECT p.amount_cents,p.status,c.type,c.payment_method,c.amount_cents AS receipt_amount FROM customer_account_entries p JOIN account_payment_receipts l ON l.payment_id=p.id JOIN cash_transactions c ON c.id=l.receipt_transaction_id WHERE p.id=? AND p.customer_id=? AND p.type='PAYMENT'")
+        .bind(payment).bind(cust).fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?.ok_or("Recebimento sem vínculo financeiro seguro. Revise o histórico antes de corrigir.")?;
+    if row.get::<String,_>("status")=="CANCELLED" {return Err("Este recebimento já foi estornado.".into());}
+    let amount=row.get::<i64,_>("amount_cents");let m=row.get::<Option<String>,_>("payment_method").ok_or("Forma original ausente.")?;
+    if amount<=0 || amount!=row.get::<i64,_>("receipt_amount") || row.get::<String,_>("type")!="RECEIPT" || !["CASH","PIX","DEBIT_CARD","CREDIT_CARD"].contains(&m.as_str()) {return Err("Recebimento inconsistente. Revise o histórico antes de corrigir.".into());}
+    let debts=sqlx::query("SELECT d.id,d.customer_id,d.type,d.status,a.amount_cents FROM account_payment_allocations a JOIN customer_account_entries d ON d.id=a.debit_id WHERE a.payment_id=?").bind(payment).fetch_all(&mut **tx).await.map_err(|e|e.to_string())?;
+    let mut allocated=0i64;
+    for debt in &debts {
+        let part=debt.get::<i64,_>("amount_cents");
+        if part<=0 || debt.get::<String,_>("customer_id")!=cust || !["DEBIT","ADJUSTMENT"].contains(&debt.get::<String,_>("type").as_str()) || debt.get::<String,_>("status")=="CANCELLED" {return Err("Alocações inconsistentes. Revise a caderneta.".into());}
+        allocated=allocated.checked_add(part).ok_or("Alocações fora do limite.")?;
+    }
+    if allocated!=amount {return Err("Alocações inconsistentes. Revise a caderneta.".into());}
+    let cash=open_cash(tx).await?;
+    if m=="CASH" && amount>cash_expected(tx,&cash).await? {return Err("Saldo em dinheiro insuficiente para devolver o recebimento. Registre um suprimento no caixa.".into());}
+    exec(tx,"UPDATE customer_account_entries SET status='CANCELLED' WHERE id=?",vec![json!(payment)]).await?;
+    for debt in debts {
+        exec(tx,"UPDATE customer_account_entries SET status=CASE WHEN COALESCE((SELECT SUM(a.amount_cents) FROM account_payment_allocations a JOIN customer_account_entries p ON p.id=a.payment_id WHERE a.debit_id=customer_account_entries.id AND p.status<>'CANCELLED'),0)>=amount_cents THEN 'PAID' WHEN EXISTS(SELECT 1 FROM account_payment_allocations a JOIN customer_account_entries p ON p.id=a.payment_id WHERE a.debit_id=customer_account_entries.id AND p.status<>'CANCELLED') THEN 'PARTIAL' ELSE 'OPEN' END WHERE id=?",vec![json!(debt.get::<String,_>("id"))]).await?;
+    }
+    let reversal=id();
+    exec(tx,"INSERT INTO cash_transactions(id,cash_session_id,type,payment_method,amount_cents,description) VALUES (?,?,'REVERSAL',?,?,?)",vec![json!(reversal),json!(cash),json!(m),json!(amount),json!(format!("Estorno de recebimento {payment}: {reason}"))]).await?;
+    exec(tx,"INSERT INTO account_payment_refunds(payment_id,cash_transaction_id,reason) VALUES (?,?,?)",vec![json!(payment),json!(reversal),json!(reason)]).await?;
+    Ok(json!({"amountCents":amount,"method":m,"cashSessionId":cash}))
 }
 async fn product(tx:&mut Tx,v:&Value)->Result<Value>{
     let name=text(v,"name")?.trim();if name.is_empty(){return Err("Informe o nome do produto.".into());}

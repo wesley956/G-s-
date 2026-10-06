@@ -79,9 +79,14 @@ export async function listAccountEntries(customerId?: string) {
   const params = customerId ? [customerId] : [];
 
   return db.select<AccountEntry[]>(
-    `SELECT a.*, c.name AS customer_name, COALESCE((SELECT SUM(amount_cents) FROM account_payment_allocations WHERE debit_id=a.id),0) AS paid_cents
+    `SELECT a.*, c.name AS customer_name, COALESCE((SELECT SUM(alloc.amount_cents) FROM account_payment_allocations alloc JOIN customer_account_entries p ON p.id=alloc.payment_id WHERE alloc.debit_id=a.id AND p.status<>'CANCELLED'),0) AS paid_cents,
+       receipt.payment_method, refund.reason AS refund_reason, refund.created_at AS refunded_at,
+       link.receipt_transaction_id
      FROM customer_account_entries a
      INNER JOIN customers c ON c.id = a.customer_id
+     LEFT JOIN account_payment_receipts link ON link.payment_id=a.id
+     LEFT JOIN cash_transactions receipt ON receipt.id=link.receipt_transaction_id
+     LEFT JOIN account_payment_refunds refund ON refund.payment_id=a.id
      ${where}
      ORDER BY a.created_at DESC`,
     params,
@@ -100,4 +105,13 @@ export async function receiveCustomerPayment(input: {
   customerId: string; amount: string; method: PaymentMethod; description: string; operationId?: string;
 }) {
   return writeOperation("RECEIVE", { customerId: input.customerId, amountCents: toCents(input.amount), method: input.method, description: input.description }, input.operationId);
+}
+
+export async function listReceiptAllocations(paymentId: string) {
+  const db = await getDb();
+  return db.select<{description: string | null; amount_cents: number}[]>(
+    "SELECT d.description,a.amount_cents FROM account_payment_allocations a JOIN customer_account_entries d ON d.id=a.debit_id WHERE a.payment_id=? ORDER BY d.created_at,d.id", [paymentId]);
+}
+export async function refundCustomerPayment(input: {customerId: string; paymentId: string; reason: string; operationId: string}) {
+  return writeOperation<{amountCents: number; method: PaymentMethod; cashSessionId: string}>("REFUND_RECEIPT", {customerId: input.customerId, paymentId: input.paymentId, reason: input.reason}, input.operationId);
 }

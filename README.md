@@ -21,6 +21,7 @@ Substituir controles em papel/caderno por um programa Windows simples, rápido e
 - Despesas e sangrias
 - Histórico de vendas
 - Cancelamento com estorno de estoque/caixa
+- Estorno de recebimentos na caderneta, com motivo, devolução pela forma original e reabertura dos débitos (issue #20)
 - Relatórios básicos
 - Impressão de comprovante de cada venda em 58 mm, 80 mm, A4 ou PDF
 - Impressão de 1 ou 2 vias e reimpressão pelo histórico

@@ -23,7 +23,7 @@ A revisão compara os requisitos das issues com o código acumulado dos PRs #9�
 ## Regras e limites
 
 - Cancelamento de venda de caixa já fechado registra a devolução no caixa atualmente aberto, preservando o fechamento histórico.
-- Venda fiado que já recebeu pagamento é bloqueada para cancelamento simples. A devolução desses recebimentos precisa de um fluxo próprio; apagar a dívida criaria saldo incorreto.
+- Venda fiado que já recebeu pagamento é bloqueada para cancelamento simples. A issue #20 acrescenta estorno explícito na caderneta: devolve o recebimento inteiro, reabre os débitos e preserva as alocações históricas. O cancelamento só é liberado quando não houver recebimento ativo destinado à venda. Registros anteriores à migração 5 sem vínculo ao caixa exigem revisão; não são associados por data/descrição.
 - A devolução manual de estoque registra somente o retorno físico. Para devolver pagamento e anular venda, use o cancelamento da venda, evitando registrar o retorno duas vezes.
 - Automático significa abrir o diálogo do Windows; não significa impressão silenciosa. Impressora física e diálogo de PDF continuam pendentes de homologação no Windows.
 - Despesas avulsas são lançadas pelo caixa. Fornecedores, relatórios e o módulo completo de despesas ainda são telas reservadas e não fazem parte das issues #1–#7. O restante do escopo V1 não deve ser apresentado como concluído.
