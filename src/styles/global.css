@@ -124,6 +124,7 @@ textarea {
 }
 
 .content {
+  min-width: 0;
   padding: 32px;
   max-width: 1500px;
   width: 100%;

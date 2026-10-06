@@ -8,6 +8,17 @@ async fn main() {
     let pool=sqlx::sqlite::SqlitePoolOptions::new().max_connections(5).connect_with(options).await.unwrap();
     let operation:deposito_domain::Operation=serde_json::from_value(v["operation"].clone()).unwrap();
     let result = match operation.kind.as_str() {
+        "REPORT_READ" | "REPORT_EXPORT" => {
+            match serde_json::from_value(operation.data.clone()) {
+                Ok(period) => match deposito_domain::reports::read(&pool,period).await {
+                    Ok(report) => if operation.kind=="REPORT_EXPORT" {
+                        deposito_domain::reports::csv(&report).map(|csv|serde_json::json!({"report":report,"csv":csv}))
+                    } else {Ok(serde_json::to_value(report).unwrap())},
+                    Err(e) => Err(e),
+                },
+                Err(e) => Err(e.to_string()),
+            }
+        },
         "BACKUP_CREATE" => {
             let policy=deposito_domain::backup_policy::get(&pool).await.unwrap();
             deposito_domain::backup::create(&pool,std::path::Path::new(v["backupDirectory"].as_str().unwrap()),policy.retention).await.map(|b|serde_json::to_value(b).unwrap())

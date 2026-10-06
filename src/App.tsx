@@ -17,7 +17,7 @@ import { SuppliersPage } from "./pages/SuppliersPage";
 import { SupplierFormPage } from "./pages/SupplierFormPage";
 import { ExpensesPage } from "./pages/ExpensesPage";
 import { ExpenseFormPage } from "./pages/ExpenseFormPage";
-import { PlaceholderPage } from "./pages/PlaceholderPage";
+import { ReportsPage } from "./pages/ReportsPage";
 import "./styles/receipt.css";
 
 export default function App() {
@@ -41,7 +41,7 @@ export default function App() {
         <Route path="/suppliers" element={<SuppliersPage />} />
         <Route path="/suppliers/new" element={<SupplierFormPage />} />
         <Route path="/suppliers/:supplierId/edit" element={<SupplierFormPage />} />
-        <Route path="/reports" element={<PlaceholderPage title="Relatórios" />} />
+        <Route path="/reports" element={<ReportsPage />} />
         <Route path="/settings" element={<Navigate to="/settings/printer" replace />} />
         <Route path="/settings/backup" element={<BackupSettingsPage />} />
         <Route path="/settings/printer" element={<PrinterSettingsPage />} />

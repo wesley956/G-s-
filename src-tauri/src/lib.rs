@@ -32,6 +32,29 @@ async fn save_receipt_pdf(
 }
 
 #[tauri::command]
+async fn get_report(app:tauri::AppHandle,period:domain::reports::Period)->Result<domain::reports::Report,String> {
+    let pool=database_pool(&app).await?;domain::reports::read(&pool,period).await
+}
+#[derive(serde::Serialize)]
+#[serde(rename_all="camelCase")]
+struct ReportExport {path:Option<String>,report:domain::reports::Report}
+#[tauri::command]
+async fn export_report_csv(app:tauri::AppHandle,period:domain::reports::Period)->Result<ReportExport,String> {
+    let pool=database_pool(&app).await?;let report=domain::reports::read(&pool,period).await?;
+    let csv=domain::reports::csv(&report)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let stamp=report.generated_at.replace('-', "").replace(':', "");
+        let selected=app.dialog().file().add_filter("Relatório CSV", &["csv"])
+            .set_file_name(format!("relatorio-{}-a-{}-{}.csv",report.start,report.end,stamp)).blocking_save_file();
+        let Some(selected)=selected else{return Ok(ReportExport{path:None,report});};
+        let path=selected.into_path().map_err(|e|e.to_string())?;
+        if !path.extension().and_then(|e|e.to_str()).is_some_and(|e|e.eq_ignore_ascii_case("csv")){return Err("Escolha um arquivo com extensão .csv.".into());}
+        domain::reports::save_csv_new(&path,&csv)?;
+        Ok(ReportExport{path:Some(path.to_string_lossy().into_owned()),report})
+    }).await.map_err(|e|e.to_string())?
+}
+
+#[tauri::command]
 fn log_error(app: tauri::AppHandle, message: String) -> Result<(), String> {
     use std::io::Write;
     let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
@@ -152,7 +175,7 @@ pub fn run() {
             Ok(())
         }).build())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![save_receipt_pdf, write_operation, log_error, create_backup, list_backups, export_backup, get_backup_policy, set_backup_policy, check_backup_schedule, backup_status, restore_backup])
+        .invoke_handler(tauri::generate_handler![get_report, export_report_csv, save_receipt_pdf, write_operation, log_error, create_backup, list_backups, export_backup, get_backup_policy, set_backup_policy, check_backup_schedule, backup_status, restore_backup])
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:deposito.db", migrations)

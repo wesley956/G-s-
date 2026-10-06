@@ -4,6 +4,7 @@ pub mod backup_policy;
 pub mod recovery;
 mod suppliers;
 mod expenses;
+pub mod reports;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{Row, Sqlite, Transaction};
