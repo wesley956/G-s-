@@ -48,7 +48,7 @@ export function ExpensesPage() {
       {!sessionId && <p className="feedback">Abra o caixa para registrar pagamentos ou cancelamentos. <Link to="/cash">Ir ao caixa</Link></p>}
       <div className="panel data-table-wrapper">{visible.length === 0 ? <p>Nenhuma despesa encontrada para os filtros.</p> : <table className="data-table"><thead><tr><th>Data e despesa</th><th>Fornecedor</th><th>Forma / valor</th><th>Situação</th><th>Ação</th></tr></thead><tbody>{visible.map(row => <tr key={row.id}>
         <td><strong>{row.description || "Despesa avulsa"}</strong><small className="expense-detail">{receiptDate(row.created_at)} · {row.category}{row.origin === "LEGACY" ? " · Avulsa do caixa" : ""}</small>{row.notes && <small className="expense-detail">{row.notes}</small>}</td>
-        <td>{row.supplier_name_snapshot || "—"}</td><td>{paymentLabels[row.payment_method]}<strong className="expense-detail">{formatCurrency(row.amount_cents)}</strong></td>
+        <td>{row.supplier_name_snapshot || "—"}</td><td className="expense-amount">{paymentLabels[row.payment_method]}<strong className="expense-detail">{formatCurrency(row.amount_cents)}</strong></td>
         <td>{row.cancelled_at ? <><span className="status-badge inactive">Cancelada</span><small className="expense-detail">{receiptDate(row.cancelled_at)} · {row.cancellation_reason}</small></> : <span className="status-badge active">Paga</span>}</td>
         <td>{!row.cancelled_at && <button className="ghost-button danger-text" disabled={!sessionId} onClick={() => setSelected(row)}>Cancelar despesa</button>}</td>
       </tr>)}</tbody></table>}</div>
