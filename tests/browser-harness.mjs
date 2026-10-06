@@ -35,6 +35,8 @@ window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
   const result = await response.json(); if (result.error) throw new Error(result.error);
   if (command === 'write_operation' && args.operation.kind === 'RECEIVE' && window.__losePaymentResponseOnce) { window.__losePaymentResponseOnce=false; throw new Error('Resposta interrompida após gravar recebimento'); }
   if (command === 'write_operation' && args.operation.kind === 'REFUND_RECEIPT' && window.__loseRefundResponseOnce) { window.__loseRefundResponseOnce=false; throw new Error('Resposta interrompida após gravar estorno'); }
+  if (command === 'write_operation' && args.operation.kind === 'SUPPLIER' && window.__loseSupplierResponseOnce) { window.__loseSupplierResponseOnce=false; throw new Error('Resposta interrompida após gravar fornecedor'); }
+  if (command === 'write_operation' && args.operation.kind === 'SUPPLIER_ACTIVE' && window.__loseSupplierStatusResponseOnce) { window.__loseSupplierStatusResponseOnce=false; throw new Error('Resposta interrompida após alterar fornecedor'); }
   if (command === 'restore_backup' && result.value) location.reload();
   return result.value;
 } };

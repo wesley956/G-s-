@@ -14,7 +14,7 @@ A limpeza ocorre somente depois de criar uma cópia válida e preserva arquivos 
 
 ## Restaurar
 
-Escolha “Restaurar esta cópia” ou “Escolher arquivo para restaurar”. O backend confere também o histórico e os checksums das migrações. São aceitos bancos completos da versão 4 ou 5; após restaurar uma cópia v4, o plugin SQL aplica a migração 5 antes do uso. Backups incompletos, de outro aplicativo ou de versões desconhecidas são rejeitados antes de substituir dados.
+Escolha “Restaurar esta cópia” ou “Escolher arquivo para restaurar”. O backend confere também o histórico e os checksums das migrações. São aceitos bancos completos das versões 4, 5 ou 6; após restaurar uma cópia anterior, o plugin SQL aplica as migrações até a versão 6 antes do uso. Backups incompletos, de outro aplicativo ou de versões desconhecidas são rejeitados antes de substituir dados.
 
 O diálogo nativo informa o arquivo escolhido, a substituição de dados, a cópia preventiva e o reinício. Cancelar mantém o banco atual. Depois de confirmar:
 

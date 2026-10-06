@@ -2,6 +2,7 @@
 pub mod backup;
 pub mod backup_policy;
 pub mod recovery;
+mod suppliers;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{Row, Sqlite, Transaction};
@@ -113,6 +114,8 @@ async fn dispatch(tx: &mut Tx, kind: &str, v: &Value) -> Result<Value> {
             exec(tx,"INSERT INTO customer_account_entries(id,customer_id,type,description,amount_cents,due_date,status) VALUES (?,?,'DEBIT',?,?,?,'OPEN')",vec![json!(id()),json!(cust),json!(optional(v,"description").unwrap_or("Lançamento manual".into())),json!(amount),json!(due)]).await?; Ok(Value::Null)
         },
         "PRODUCT"=>product(tx,v).await,
+        "SUPPLIER"=>suppliers::save(tx,v).await,
+        "SUPPLIER_ACTIVE"=>suppliers::set_active(tx,v).await,
         "CATEGORY"=>{
             let name=text(v,"name")?.trim();if name.is_empty(){return Err("Informe o nome da categoria.".into());}
             if sqlx::query_scalar::<_,i64>("SELECT COUNT(*) FROM categories WHERE LOWER(name)=LOWER(?)").bind(name).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?>0 {return Err("Categoria já cadastrada.".into());}

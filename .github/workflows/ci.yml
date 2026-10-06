@@ -58,6 +58,9 @@ jobs:
       - run: node tests/browser-refunds.mjs
         env:
           GAS_PLAYWRIGHT_MODULE: playwright
+      - run: node tests/browser-suppliers.mjs
+        env:
+          GAS_PLAYWRIGHT_MODULE: playwright
   windows-native:
     runs-on: windows-latest
     steps:

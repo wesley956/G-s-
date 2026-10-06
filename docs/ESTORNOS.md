@@ -12,6 +12,6 @@ Os novos recebimentos têm vínculo explícito com o caixa. Recebimentos anterio
 
 Recebimento, alocações, estorno e histórico são gravados em transação nativa. Tentativas concorrentes não devolvem duas vezes. Se a resposta falhar após gravar, repita a confirmação com o mesmo motivo: a interface conserva a identificação da tentativa e recupera seu resultado.
 
-A migração 5 preserva os dados e checksums anteriores. A restauração reconhece backups v4/v5 válidos; o aplicativo atualiza a cópia v4 antes de usá-la. Backups futuros ou migrações divergentes permanecem bloqueados.
+A migração 5 preserva os dados e checksums anteriores. A restauração reconhece backups v4/v5/v6 válidos; o aplicativo atualiza as cópias anteriores antes de usá-las. Backups futuros ou migrações divergentes permanecem bloqueados.
 
 Validação automatizada: testes nativos de pagamentos parciais e múltiplos débitos, concorrência, repetição, rollback, caixa fechado, devolução tardia, formas originais, cliente inativo, saldo insuficiente e vínculos ausentes; resumo de caixa em SQLite real; roteiro de interface com domínio Rust real. O teste do instalador restaura uma cópia v4 e confere a atualização nativa para v5. Integração da cadeia de PRs e homologação no equipamento do depósito continuam pendentes.

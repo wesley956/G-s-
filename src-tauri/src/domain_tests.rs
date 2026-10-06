@@ -6,9 +6,9 @@ async fn connect(path: &std::path::Path)->SqlitePool {
 }
 async fn setup()->Fixture {
     let dir=tempfile::tempdir().unwrap();let pool=connect(&dir.path().join("test.db")).await;
-    for migration in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql")] {sqlx::raw_sql(migration).execute(&pool).await.unwrap();}
+    for migration in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql"),include_str!("../migrations/0006_suppliers.sql")] {sqlx::raw_sql(migration).execute(&pool).await.unwrap();}
     pool.execute("CREATE TABLE _sqlx_migrations(version BIGINT PRIMARY KEY,description TEXT,installed_on TEXT DEFAULT CURRENT_TIMESTAMP,success BOOLEAN,checksum BLOB,execution_time BIGINT)").await.unwrap();
-    for (index,migration) in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql")].iter().enumerate() {
+    for (index,migration) in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql"),include_str!("../migrations/0006_suppliers.sql")].iter().enumerate() {
         use sha2::{Digest,Sha384};
         sqlx::query("INSERT INTO _sqlx_migrations(version,description,success,checksum,execution_time) VALUES (?, 'test migration',1,?,0)").bind(index as i64+1).bind(Sha384::digest(migration.as_bytes()).to_vec()).execute(&pool).await.unwrap();
     }
@@ -17,6 +17,45 @@ async fn setup()->Fixture {
     pool.execute("INSERT INTO customers(id,name,phone) VALUES ('customer','José','123')").await.unwrap();Fixture{pool,dir}
 }
 fn operation(kind:&str,data:Value)->Operation {Operation{id:id(),kind:kind.into(),data}}
+fn supplier_input()->Value {json!({"name":"  Águas São João  ","contactName":"  José  ","phone":"(19) 99999-0000","whatsapp":"19988880000","document":"12.345.678/0001-99","email":"  contato@agua.example  ","address":"Rua do Comércio, 10","notes":"Entrega terça\nConfirmar pedido","active":true})}
+#[tokio::test]
+async fn supplier_create_edit_status_and_concurrent_replay_preserve_one_record(){
+    let f=setup().await;let op=operation("SUPPLIER",supplier_input());
+    let (a,b)=tokio::join!(apply(&f.pool,op.clone()),apply(&f.pool,op.clone()));let supplier=a.unwrap();assert_eq!(supplier,b.unwrap());assert_eq!(count(&f.pool,"suppliers").await,1);
+    let row=sqlx::query("SELECT name,contact_name,email FROM suppliers").fetch_one(&f.pool).await.unwrap();assert_eq!(row.get::<String,_>("name"),"Águas São João");assert_eq!(row.get::<String,_>("contact_name"),"José");assert_eq!(row.get::<String,_>("email"),"contato@agua.example");
+    let mut edited=supplier_input();edited["id"]=supplier.clone();edited["phone"]=json!("19977770000");edited["notes"]=json!("");apply(&f.pool,operation("SUPPLIER",edited)).await.unwrap();
+    let status=operation("SUPPLIER_ACTIVE",json!({"id":supplier,"active":false}));apply(&f.pool,status.clone()).await.unwrap();apply(&f.pool,status).await.unwrap();
+    let row=sqlx::query("SELECT active,phone,notes FROM suppliers").fetch_one(&f.pool).await.unwrap();assert_eq!(row.get::<i64,_>("active"),0);assert_eq!(row.get::<String,_>("phone"),"19977770000");assert!(row.get::<Option<String>,_>("notes").is_none());
+    apply(&f.pool,operation("SUPPLIER_ACTIVE",json!({"id":supplier,"active":true}))).await.unwrap();assert_eq!(count(&f.pool,"suppliers").await,1);
+    let mut changed=op;changed.data["name"]=json!("Outra empresa");assert!(apply(&f.pool,changed).await.is_err());
+}
+#[tokio::test]
+async fn supplier_validation_and_missing_update_cannot_create_or_damage_records(){
+    let f=setup().await;
+    for (key,value) in [("name",json!("  ")),("name",json!("a".repeat(161))),("active",json!(1)),("phone",json!(1)),("notes",json!("a".repeat(4001))),("email",json!("invalido")),("name",json!("nome\u{0}invalido")),("id",json!("missing"))] {
+        let mut input=supplier_input();input[key]=value;assert!(apply(&f.pool,operation("SUPPLIER",input)).await.is_err());
+    }
+    assert!(apply(&f.pool,operation("SUPPLIER_ACTIVE",json!({"id":"missing","active":true}))).await.is_err());
+    assert_eq!(count(&f.pool,"suppliers").await,0);assert_eq!(count(&f.pool,"operation_results").await,0);
+}
+#[tokio::test]
+async fn supplier_history_failure_rolls_back_create_and_edit(){
+    let f=setup().await;
+    f.pool.execute("CREATE TRIGGER fail_operation BEFORE INSERT ON operation_results BEGIN SELECT RAISE(ABORT,'forced operation failure'); END").await.unwrap();
+    assert!(apply(&f.pool,operation("SUPPLIER",supplier_input())).await.is_err());assert_eq!(count(&f.pool,"suppliers").await,0);
+    f.pool.execute("DROP TRIGGER fail_operation").await.unwrap();let supplier=apply(&f.pool,operation("SUPPLIER",supplier_input())).await.unwrap();
+    f.pool.execute("CREATE TRIGGER fail_supplier_edit BEFORE INSERT ON operation_results BEGIN SELECT RAISE(ABORT,'forced operation failure'); END").await.unwrap();
+    let mut edited=supplier_input();edited["id"]=supplier;edited["name"]=json!("Novo nome");assert!(apply(&f.pool,operation("SUPPLIER",edited)).await.is_err());
+    assert_eq!(sqlx::query_scalar::<_,String>("SELECT name FROM suppliers").fetch_one(&f.pool).await.unwrap(),"Águas São João");
+}
+#[tokio::test]
+async fn supplier_backup_reopens_contacts_and_known_v5_remains_restorable(){
+    let f=setup().await;let op=operation("SUPPLIER",supplier_input());let supplier=apply(&f.pool,op.clone()).await.unwrap();
+    let copy=f.dir.path().join("suppliers.sqlite");backup::snapshot(&f.pool,&copy).await.unwrap();backup::validate_restore(&copy).await.unwrap();
+    let reopened=connect(&copy).await;assert_eq!(apply(&reopened,op).await.unwrap(),supplier);assert_eq!(sqlx::query_scalar::<_,String>("SELECT notes FROM suppliers").fetch_one(&reopened).await.unwrap(),"Entrega terça\nConfirmar pedido");
+    reopened.execute("DROP TABLE suppliers; DELETE FROM _sqlx_migrations WHERE version=6").await.unwrap();reopened.close().await;backup::validate_restore(&copy).await.unwrap();
+    let broken=f.dir.path().join("broken-suppliers.sqlite");backup::snapshot(&f.pool,&broken).await.unwrap();let damaged=connect(&broken).await;damaged.execute("ALTER TABLE suppliers DROP COLUMN phone").await.unwrap();damaged.close().await;assert!(backup::validate_restore(&broken).await.is_err());
+}
 async fn receive_id(pool:&SqlitePool,amount:i64,method:&str)->String {
     apply(pool,operation("RECEIVE",json!({"customerId":"customer","amountCents":amount,"method":method}))).await.unwrap();
     sqlx::query_scalar("SELECT id FROM customer_account_entries WHERE type='PAYMENT' AND status<>'CANCELLED' ORDER BY rowid DESC LIMIT 1").fetch_one(pool).await.unwrap()
@@ -98,7 +137,7 @@ async fn receipt_refund_rejects_insufficient_cash_wrong_customer_missing_reason_
 #[tokio::test]
 async fn restoration_accepts_known_v4_and_rejects_incomplete_v5_before_upgrade(){
     let f=setup().await;let source=f.dir.path().join("old.sqlite");backup::snapshot(&f.pool,&source).await.unwrap();
-    let old=connect(&source).await;old.execute("DROP TABLE account_payment_refunds; DROP TABLE account_payment_receipts; DELETE FROM _sqlx_migrations WHERE version=5").await.unwrap();old.close().await;
+    let old=connect(&source).await;old.execute("DROP TABLE account_payment_refunds; DROP TABLE account_payment_receipts; DROP TABLE suppliers; DELETE FROM _sqlx_migrations WHERE version>4").await.unwrap();old.close().await;
     backup::validate_restore(&source).await.unwrap();
     recovery::prepare(&source,f.dir.path()).await.unwrap();
     let broken=f.dir.path().join("broken.sqlite");backup::snapshot(&f.pool,&broken).await.unwrap();let damaged=connect(&broken).await;damaged.execute("DROP TABLE account_payment_refunds").await.unwrap();damaged.close().await;
