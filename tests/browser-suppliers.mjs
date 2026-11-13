@@ -38,7 +38,7 @@ try {
  await page.goto('http://127.0.0.1:1420/#/settings/backup');await page.getByRole('button',{name:'Criar backup agora'}).click();await page.getByText('Backup criado e validado.',{exact:true}).waitFor();
  await page.goto(`http://127.0.0.1:1420/#/suppliers/${supplier.id}/edit`);await page.getByLabel('Nome do fornecedor *').fill('Alterado depois do backup');
  await page.getByRole('button',{name:'Salvar fornecedor'}).click();await page.getByRole('cell',{name:'Alterado depois do backup',exact:false}).waitFor();
- await page.goto('http://127.0.0.1:1420/#/settings/backup');await page.getByRole('button',{name:'Restaurar esta cópia'}).first().click();
+ await page.goto('http://127.0.0.1:1420/#/settings/backup');await page.getByLabel('Senha de administrador para restaurar').fill('teste-admin');await page.getByRole('button',{name:'Restaurar esta cópia'}).first().click();
  await page.getByText('Backup restaurado. A cópia preventiva está na lista de backups.',{exact:true}).waitFor();
  await page.goto('http://127.0.0.1:1420/#/suppliers');await page.getByRole('cell',{name:"Água d'Oeste",exact:false}).waitFor();
  assert.equal(db.prepare('SELECT notes FROM suppliers').get().notes,'Entrega somente quinta');
