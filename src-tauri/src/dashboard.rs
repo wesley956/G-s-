@@ -14,6 +14,7 @@ pub async fn read(pool:&SqlitePool)->Result<Dashboard> { read_on(pool,None).awai
 
 // The date override is internal, for deterministic domain tests. Desktop uses SQLite's local clock.
 pub(crate) async fn read_on(pool:&SqlitePool,day:Option<&str>)->Result<Dashboard> {
+    let mut tx=pool.begin().await.map_err(|e|e.to_string())?;
     let r=sqlx::query(r#"WITH clock AS (
         SELECT COALESCE(?,date('now','localtime')) day,strftime('%d/%m/%Y %H:%M:%S','now','localtime') generated
     ), balances AS (
@@ -38,11 +39,16 @@ pub(crate) async fn read_on(pool:&SqlitePool,day:Option<&str>)->Result<Dashboard
         (SELECT COUNT(*) FROM balances WHERE balance>0) debtors,
         (SELECT COUNT(*) FROM products WHERE active=1 AND stock_quantity<=minimum_stock) low_stock,
         (SELECT json_group_array(json_object('method',method,'salesCents',sold,'saleRefundCents',cancelled,'receiptsCents',receipt,'receiptRefundCents',receipt_refund)) FROM methods) methods
-        FROM clock"#).bind(day).fetch_one(pool).await.map_err(|e|e.to_string())?;
+        ,(SELECT json_group_array(json_object('id',id,'balance',balance)) FROM balances) balances
+        FROM clock"#).bind(day).fetch_one(&mut *tx).await.map_err(|e|e.to_string())?;
+    let mut balances:Vec<Value>=serde_json::from_str(&r.get::<String,_>("balances")).map_err(|e|e.to_string())?;
+    let query_day:String=r.get("day");
+    for preview in accrual::previews_on(&mut tx,None,&query_day).await? {if let Some(b)=balances.iter_mut().find(|b|b["id"]==preview.customer_id){b["balance"]=json!(b["balance"].as_i64().unwrap_or(0)+preview.pending_cents);}}
+    tx.commit().await.map_err(|e|e.to_string())?;
     Ok(Dashboard {
         day:r.get("day"),generated_at_local:r.get("generated"),cash_open:r.get::<i64,_>("cash_open")>0,
         sales_count:r.get("sales_count"),sold_cents:r.get("sold"),cancelled_count:r.get("cancelled_count"),cancelled_cents:r.get("cancelled"),
-        credit_sales_cents:r.get("credit_sales"),balance_cents:r.get("balance"),debtors_count:r.get("debtors"),low_stock_count:r.get("low_stock"),
+        credit_sales_cents:r.get("credit_sales"),balance_cents:balances.iter().filter_map(|b|b["balance"].as_i64()).filter(|b|*b>0).sum(),debtors_count:balances.iter().filter(|b|b["balance"].as_i64().unwrap_or(0)>0).count() as i64,low_stock_count:r.get("low_stock"),
         methods:serde_json::from_str(&r.get::<String,_>("methods")).map_err(|e|e.to_string())?,
     })
 }

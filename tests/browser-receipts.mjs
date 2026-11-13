@@ -73,8 +73,8 @@ try {
  await page.getByRole('link',{name:'Vendas',exact:true}).click();
  await page.locator('tbody tr').nth(3).waitFor();
  assert.equal(await page.locator('tbody tr').count(),4);
- page.once('dialog',dialog=>dialog.accept('Cliente desistiu'));
  await page.getByRole('button',{name:'Cancelar',exact:true}).last().click();
+ await page.getByLabel('Motivo do cancelamento').fill('Cliente desistiu');await page.getByLabel('Senha de administrador',{exact:true}).fill('teste-admin');await page.getByRole('button',{name:'Confirmar cancelamento da venda'}).click();
  await page.getByText('Cancelada',{exact:true}).waitFor();
  await page.locator('tbody tr').last().getByRole('button',{name:'Comprovante / reimprimir',exact:true}).click();
  await page.getByText('VENDA CANCELADA - SEM VALIDADE',{exact:true}).waitFor();

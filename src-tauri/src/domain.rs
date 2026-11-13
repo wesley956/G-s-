@@ -7,6 +7,9 @@ mod expenses;
 pub mod reports;
 pub mod dashboard;
 pub mod audit;
+pub mod security;
+pub mod accrual;
+mod deliveries;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{Row, Sqlite, Transaction};
@@ -76,14 +79,23 @@ async fn cash_expected(tx: &mut Tx, session: &str) -> Result<i64> {
 
 pub async fn apply(pool: &SqlitePool, op: Operation) -> Result<Value> {
     uuid::Uuid::parse_str(&op.id).map_err(|_|"Identificador da operação inválido.")?;
-    let request = serde_json::to_string(&op).map_err(|e|e.to_string())?;
+    let mut safe_op=op.clone();
+    if let Some(data)=safe_op.data.as_object_mut(){data.remove("adminPassword");data.remove("newPassword");}
+    let request = serde_json::to_string(&safe_op).map_err(|e|e.to_string())?;
     // BEGIN IMMEDIATE serializes stock checks, sequence allocation and cash closing.
     // Dropping Transaction schedules rollback even on error or cancellation.
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await.map_err(|e|e.to_string())?;
     if let Some(r)=sqlx::query("SELECT request_json,result_json FROM operation_results WHERE id=?").bind(&op.id).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())? {
+        security::authorize(&mut tx,&op,true).await?;
         if r.get::<String,_>("request_json")!=request { return Err("A operação já foi usada com outros dados.".into()); }
         let result=serde_json::from_str(&r.get::<String,_>("result_json")).map_err(|e|e.to_string())?;
         tx.commit().await.map_err(|e|e.to_string())?; return Ok(result);
+    }
+    security::authorize(&mut tx,&op,false).await?;
+    if op.kind=="RECEIVE" {accrual::materialize(&mut tx,Some(text(&op.data,"customerId")?)).await?;}
+    if op.kind=="CANCEL_SALE" {
+        let customer:Option<String>=sqlx::query_scalar("SELECT customer_id FROM sales WHERE id=?").bind(text(&op.data,"saleId")?).fetch_optional(&mut *tx).await.map_err(|e|e.to_string())?.flatten();
+        if let Some(customer)=customer {accrual::materialize(&mut tx,Some(&customer)).await?;}
     }
     let result=dispatch(&mut tx,&op.kind,&op.data).await?;
     exec(&mut tx,"INSERT INTO operation_results(id,request_json,result_json) VALUES (?,?,?)",vec![json!(op.id),json!(request),json!(result.to_string())]).await?;
@@ -92,6 +104,12 @@ pub async fn apply(pool: &SqlitePool, op: Operation) -> Result<Value> {
 }
 async fn dispatch(tx: &mut Tx, kind: &str, v: &Value) -> Result<Value> {
     match kind {
+        "ACCRUAL_SETTINGS"=>accrual::save_policy(tx,v).await,
+        "ACCRUAL_PLAN"=>accrual::change_plan(tx,v).await,
+        "ADMIN_SETUP"=>security::save(tx,v,true).await,
+        "ADMIN_CHANGE"=>security::save(tx,v,false).await,
+        "DRIVER"=>deliveries::driver(tx,v).await,
+        "DELIVER"=>deliveries::complete(tx,v).await,
         "SALE"=>sale(tx,v).await, "CANCEL_SALE"=>cancel_sale(tx,v).await,
         "STOCK"=>stock(tx,v).await, "RECEIVE"=>receive(tx,v).await,
         "REFUND_RECEIPT"=>refund_receipt(tx,v).await,
@@ -118,7 +136,8 @@ async fn dispatch(tx: &mut Tx, kind: &str, v: &Value) -> Result<Value> {
         },
         "DEBIT"=>{
             let cust=text(v,"customerId")?; customer(tx,cust,true).await?;let amount=money(v,"amountCents",false)?;let due=due_date(v)?;
-            exec(tx,"INSERT INTO customer_account_entries(id,customer_id,type,description,amount_cents,due_date,status) VALUES (?,?,'DEBIT',?,?,?,'OPEN')",vec![json!(id()),json!(cust),json!(optional(v,"description").unwrap_or("Lançamento manual".into())),json!(amount),json!(due)]).await?; Ok(Value::Null)
+            let entry=id();
+            exec(tx,"INSERT INTO customer_account_entries(id,customer_id,type,description,amount_cents,due_date,status) VALUES (?,?,'DEBIT',?,?,?,'OPEN')",vec![json!(entry),json!(cust),json!(optional(v,"description").unwrap_or("Lançamento manual".into())),json!(amount),json!(due)]).await?; accrual::attach(tx,&entry,v).await?; Ok(Value::Null)
         },
         "PRODUCT"=>product(tx,v).await,
         "SUPPLIER"=>suppliers::save(tx,v).await,
@@ -166,8 +185,9 @@ async fn sale(tx: &mut Tx,v: &Value)->Result<Value> {
     let stored:Option<String>=sqlx::query_scalar("SELECT value FROM app_settings WHERE key='receipt_settings'").fetch_optional(&mut **tx).await.map_err(|e|e.to_string())?.flatten();
     let settings:Value=if let Some(s)=stored{serde_json::from_str(&s).map_err(|_|"As configurações de impressão estão inválidas.")?}else{json!({})};
     if !settings.is_object(){return Err("As configurações de impressão estão inválidas.".into());}
-    let business_name=settings_text(&settings,"businessName","G-s- Gestão de Depósito",120);
-    let snapshot=json!({"version":1,"business":{"businessName":if business_name.is_empty(){"G-s- Gestão de Depósito"}else{&business_name},"document":settings_text(&settings,"document","",30),"address":settings_text(&settings,"address","",240),"phone":settings_text(&settings,"phone","",40),"footer":settings_text(&settings,"footer","Obrigado pela preferência!",240)},"customer":snapshot_customer});
+    let delivery=if typ=="DELIVERY"{deliveries::prepare(tx,v.get("delivery")).await?}else{Value::Null};
+    let business_name=settings_text(&settings,"businessName","Nilson gás e Água",120);
+    let snapshot=json!({"version":1,"business":{"businessName":if business_name.is_empty(){"Nilson gás e Água"}else{&business_name},"document":settings_text(&settings,"document","",30),"address":settings_text(&settings,"address","",240),"phone":settings_text(&settings,"phone","",40),"footer":settings_text(&settings,"footer","Obrigado pela preferência!",240)},"customer":snapshot_customer,"delivery":delivery});
     let mode=settings.get("printMode").and_then(Value::as_str).filter(|m|["ASK","AUTO_ONE","AUTO_TWO","NEVER"].contains(m)).unwrap_or("ASK");
     let number:i64=sqlx::query_scalar("SELECT COALESCE(MAX(sale_number),0)+1 FROM sales").fetch_one(&mut **tx).await.map_err(|e|e.to_string())?;let sale_id=id();
     exec(tx,"INSERT INTO sales(id,sale_number,cash_session_id,customer_id,sale_type,status,subtotal_cents,discount_cents,total_cents,completed_at) VALUES (?,?,?,?,?,'COMPLETED',?,?,?,CURRENT_TIMESTAMP)",vec![json!(sale_id),json!(number),json!(cash),json!(cust),json!(typ),json!(subtotal),json!(discount),json!(total)]).await?;
@@ -179,8 +199,9 @@ async fn sale(tx: &mut Tx,v: &Value)->Result<Value> {
     for (m,amount,received) in prepared_payments {
         exec(tx,"INSERT INTO payments(id,sale_id,method,amount_cents,received_cents,change_cents) VALUES (?,?,?,?,?,?)",vec![json!(id()),json!(sale_id),json!(m),json!(amount),json!(received),json!(received.map(|r|r-amount).unwrap_or(0))]).await?;
         exec(tx,"INSERT INTO cash_transactions(id,cash_session_id,sale_id,type,payment_method,amount_cents,description) VALUES (?,?,?,'SALE',?,?,?)",vec![json!(id()),json!(cash),json!(sale_id),json!(m),json!(amount),json!(format!("Venda #{number}"))]).await?;
-        if m=="CREDIT_CUSTOMER" {exec(tx,"INSERT INTO customer_account_entries(id,customer_id,sale_id,type,description,amount_cents,due_date,status) VALUES (?,?,?,'DEBIT',?,?,?,'OPEN')",vec![json!(id()),json!(cust),json!(sale_id),json!(format!("Venda #{number}")),json!(amount),json!(due)]).await?;}
+        if m=="CREDIT_CUSTOMER" {let entry=id();exec(tx,"INSERT INTO customer_account_entries(id,customer_id,sale_id,type,description,amount_cents,due_date,status) VALUES (?,?,?,'DEBIT',?,?,?,'OPEN')",vec![json!(entry),json!(cust),json!(sale_id),json!(format!("Venda #{number}")),json!(amount),json!(due)]).await?;accrual::attach(tx,&entry,v).await?;}
     }
+    deliveries::record(tx,&sale_id,&delivery).await?;
     exec(tx,"INSERT INTO sale_receipt_snapshots(sale_id,snapshot_json) VALUES (?,?)",vec![json!(sale_id),json!(snapshot.to_string())]).await?;
     Ok(json!({"saleId":sale_id,"saleNumber":number,"totalCents":total,"printMode":mode}))
 }
@@ -199,8 +220,9 @@ async fn cancel_sale(tx:&mut Tx,v:&Value)->Result<Value>{
     }
     let payments=sqlx::query("SELECT method,amount_cents FROM payments WHERE sale_id=?").bind(sale_id).fetch_all(&mut **tx).await.map_err(|e|e.to_string())?;
     for p in payments{exec(tx,"INSERT INTO cash_transactions(id,cash_session_id,sale_id,type,payment_method,amount_cents,description) VALUES (?,?,?,'REVERSAL',?,?,?)",vec![json!(id()),json!(cash),json!(sale_id),json!(p.get::<String,_>("method")),json!(p.get::<i64,_>("amount_cents")),json!(format!("Estorno venda #{number}: {reason}"))]).await?;}
-    exec(tx,"UPDATE customer_account_entries SET status='CANCELLED' WHERE sale_id=? AND type='DEBIT'",vec![json!(sale_id)]).await?;
-    exec(tx,"UPDATE sales SET status='CANCELLED',cancelled_at=CURRENT_TIMESTAMP,cancellation_reason=? WHERE id=? AND status='COMPLETED'",vec![json!(reason),json!(sale_id)]).await?;Ok(Value::Null)
+    exec(tx,"UPDATE customer_account_entries SET status='CANCELLED' WHERE sale_id=? AND type IN ('DEBIT','ADJUSTMENT')",vec![json!(sale_id)]).await?;
+    exec(tx,"UPDATE sales SET status='CANCELLED',cancelled_at=CURRENT_TIMESTAMP,cancellation_reason=? WHERE id=? AND status='COMPLETED'",vec![json!(reason),json!(sale_id)]).await?;
+    exec(tx,"UPDATE sale_deliveries SET status='CANCELLED' WHERE sale_id=?",vec![json!(sale_id)]).await?;accrual::close_paid(tx).await?;Ok(Value::Null)
 }
 async fn stock(tx:&mut Tx,v:&Value)->Result<Value>{
     let p=text(v,"productId")?;let action=text(v,"action")?;let reason=text(v,"reason")?.trim();if reason.is_empty(){return Err("Informe o motivo da movimentação.".into());}
@@ -225,7 +247,7 @@ async fn receive(tx:&mut Tx,v:&Value)->Result<Value>{
     if left!=0{return Err("Saldo da caderneta inconsistente. Revise os lançamentos.".into());}
     let receipt=id();
     exec(tx,"INSERT INTO cash_transactions(id,cash_session_id,type,payment_method,amount_cents,description) VALUES (?,?,'RECEIPT',?,?,?)",vec![json!(receipt),json!(cash),json!(m),json!(amount),json!(desc)]).await?;
-    exec(tx,"INSERT INTO account_payment_receipts(payment_id,receipt_transaction_id) VALUES (?,?)",vec![json!(payment),json!(receipt)]).await?;Ok(Value::Null)
+    exec(tx,"INSERT INTO account_payment_receipts(payment_id,receipt_transaction_id) VALUES (?,?)",vec![json!(payment),json!(receipt)]).await?;accrual::close_paid(tx).await?;Ok(Value::Null)
 }
 async fn refund_receipt(tx:&mut Tx,v:&Value)->Result<Value>{
     let payment=text(v,"paymentId")?;let cust=text(v,"customerId")?;
@@ -253,6 +275,7 @@ async fn refund_receipt(tx:&mut Tx,v:&Value)->Result<Value>{
     let reversal=id();
     exec(tx,"INSERT INTO cash_transactions(id,cash_session_id,type,payment_method,amount_cents,description) VALUES (?,?,'REVERSAL',?,?,?)",vec![json!(reversal),json!(cash),json!(m),json!(amount),json!(format!("Estorno de recebimento {payment}: {reason}"))]).await?;
     exec(tx,"INSERT INTO account_payment_refunds(payment_id,cash_transaction_id,reason) VALUES (?,?,?)",vec![json!(payment),json!(reversal),json!(reason)]).await?;
+    accrual::resume_refunded(tx,cust).await?;
     Ok(json!({"amountCents":amount,"method":m,"cashSessionId":cash}))
 }
 async fn product(tx:&mut Tx,v:&Value)->Result<Value>{
@@ -272,3 +295,7 @@ async fn product(tx:&mut Tx,v:&Value)->Result<Value>{
 #[cfg(test)]
 #[path = "domain_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "nilson_tests.rs"]
+mod nilson_tests;

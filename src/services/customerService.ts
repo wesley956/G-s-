@@ -1,3 +1,4 @@
+import { getAccruals } from "./accrualService";
 import { writeOperation } from "../lib/operations";
 import { toCents } from "../lib/money";
 import { getDb } from "../lib/db";
@@ -6,7 +7,7 @@ import type { PaymentMethod } from "../types/sale";
 
 export async function listCustomers() {
   const db = await getDb();
-  return db.select<Customer[]>(
+  const rows=await db.select<Customer[]>(
     `SELECT
       c.*,
       COALESCE(SUM(
@@ -22,6 +23,8 @@ export async function listCustomers() {
     GROUP BY c.id
     ORDER BY c.active DESC, c.name COLLATE NOCASE ASC`,
   );
+  const plans=await getAccruals();
+  return rows.map(row=>({...row,balance_cents:(row.balance_cents||0)+plans.filter(p=>p.customerId===row.id).reduce((sum,p)=>sum+p.pendingCents,0)}));
 }
 
 export async function listActiveCustomers() {
@@ -78,7 +81,7 @@ export async function listAccountEntries(customerId?: string) {
   const where = customerId ? "WHERE a.customer_id = ?" : "";
   const params = customerId ? [customerId] : [];
 
-  return db.select<AccountEntry[]>(
+  const rows=await db.select<AccountEntry[]>(
     `SELECT a.*, c.name AS customer_name, COALESCE((SELECT SUM(alloc.amount_cents) FROM account_payment_allocations alloc JOIN customer_account_entries p ON p.id=alloc.payment_id WHERE alloc.debit_id=a.id AND p.status<>'CANCELLED'),0) AS paid_cents,
        receipt.payment_method, refund.reason AS refund_reason, refund.created_at AS refunded_at,
        link.receipt_transaction_id
@@ -91,6 +94,10 @@ export async function listAccountEntries(customerId?: string) {
      ORDER BY a.created_at DESC`,
     params,
   );
+  const plans=await getAccruals(customerId);
+  const enriched=rows.map(row=>({...row,accrual_plan:plans.find(p=>p.entryId===row.id)}));
+  const previews:AccountEntry[]=plans.filter(p=>p.pendingCents>0).map(p=>({id:`preview-${p.planId}`,customer_id:p.customerId,sale_id:p.saleId,type:"ADJUSTMENT",description:`Acréscimo calculado até ${p.throughDate} · ${p.description}`,amount_cents:p.pendingCents,paid_cents:0,payment_method:null,receipt_transaction_id:null,refund_reason:null,refunded_at:null,due_date:null,status:"OPEN",attachment_path:null,created_at:p.throughDate+"T12:00:00",accrual_preview:true}));
+  return [...previews,...enriched];
 }
 
 export async function addManualDebit(input: {
@@ -98,8 +105,11 @@ export async function addManualDebit(input: {
   description: string;
   amount: string;
   dueDate: string;
+  accrualStartDate?:string;
+  operationId?:string;
 }) {
-  return writeOperation("DEBIT", { ...input, amountCents: toCents(input.amount) });
+  const {operationId,amount,...data}=input;
+  return writeOperation("DEBIT", { ...data,description:input.description.trim(), amountCents: toCents(amount) },operationId);
 }
 export async function receiveCustomerPayment(input: {
   customerId: string; amount: string; method: PaymentMethod; description: string; operationId?: string;

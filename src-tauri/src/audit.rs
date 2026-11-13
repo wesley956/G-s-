@@ -1,7 +1,7 @@
 //! Read-only confirmed-operation history; never replays or rewrites the replay source.
 use super::*;
 
-pub const KINDS:&[&str]=&["SALE","CANCEL_SALE","STOCK","RECEIVE","REFUND_RECEIPT","EXPENSE","REFUND_EXPENSE","OPEN_CASH","CASH_MOVE","CLOSE_CASH","DEBIT","PRODUCT","SUPPLIER","SUPPLIER_ACTIVE","CATEGORY","UNKNOWN"];
+pub const KINDS:&[&str]=&["SALE","CANCEL_SALE","STOCK","RECEIVE","REFUND_RECEIPT","EXPENSE","REFUND_EXPENSE","OPEN_CASH","CASH_MOVE","CLOSE_CASH","DEBIT","PRODUCT","SUPPLIER","SUPPLIER_ACTIVE","CATEGORY","DRIVER","DELIVER","ADMIN_SETUP","ADMIN_CHANGE","ACCRUAL_SETTINGS","ACCRUAL_PLAN","UNKNOWN"];
 #[derive(Deserialize,Serialize,Clone)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
 pub struct Query {pub start:String,pub end:String,pub kind:Option<String>,pub search:String,pub page:u32,pub anchor:Option<i64>}
@@ -13,7 +13,7 @@ const KIND_SQL:&str="CASE WHEN json_valid(request_json) THEN CASE WHEN json_type
 fn route_id(value:&str)->String {value.bytes().map(|b|if b.is_ascii_alphanumeric() || b"-._~".contains(&b){(b as char).to_string()}else{format!("%{b:02X}")}).collect()}
 fn display_method(value:&str)->&str {match value {"CASH"=>"Dinheiro","PIX"=>"PIX","DEBIT_CARD"=>"Débito","CREDIT_CARD"=>"Crédito","CREDIT_CUSTOMER"=>"Fiado / caderneta",_=>"Não identificada"}}
 fn label(kind:&str)->&str {match kind {
- "SALE"=>"Venda confirmada","CANCEL_SALE"=>"Cancelamento de venda","STOCK"=>"Movimento de estoque","RECEIVE"=>"Recebimento de caderneta","REFUND_RECEIPT"=>"Devolução de caderneta","EXPENSE"=>"Despesa paga","REFUND_EXPENSE"=>"Devolução de despesa","OPEN_CASH"=>"Abertura de caixa","CASH_MOVE"=>"Movimento de caixa","CLOSE_CASH"=>"Fechamento de caixa","DEBIT"=>"Débito manual","PRODUCT"=>"Cadastro / edição de produto","SUPPLIER"=>"Cadastro / edição de fornecedor","SUPPLIER_ACTIVE"=>"Situação do fornecedor","CATEGORY"=>"Cadastro de categoria",_=>"Operação antiga ou desconhecida"}}
+ "SALE"=>"Venda confirmada","CANCEL_SALE"=>"Cancelamento de venda","STOCK"=>"Movimento de estoque","RECEIVE"=>"Recebimento de caderneta","REFUND_RECEIPT"=>"Devolução de caderneta","EXPENSE"=>"Despesa paga","REFUND_EXPENSE"=>"Devolução de despesa","OPEN_CASH"=>"Abertura de caixa","CASH_MOVE"=>"Movimento de caixa","CLOSE_CASH"=>"Fechamento de caixa","DEBIT"=>"Débito manual","PRODUCT"=>"Cadastro / edição de produto","SUPPLIER"=>"Cadastro / edição de fornecedor","SUPPLIER_ACTIVE"=>"Situação do fornecedor","CATEGORY"=>"Cadastro de categoria","DRIVER"=>"Cadastro / edição de entregador","DELIVER"=>"Finalização de entrega","ADMIN_SETUP"=>"Cadastro de senha de administrador","ADMIN_CHANGE"=>"Troca de senha de administrador","ACCRUAL_SETTINGS"=>"Regra da caderneta","ACCRUAL_PLAN"=>"Acréscimo do débito",_=>"Operação antiga ou desconhecida"}}
 fn field(fields:&mut Vec<Value>,name:&str,value:String) {if !value.trim().is_empty(){fields.push(json!({"label":name,"value":value}));}}
 fn named(fields:&mut Vec<Value>,data:&Value,key:&str,name:&str) {if let Some(value)=data[key].as_str(){field(fields,name,value.trim().to_owned());}}
 fn amount(fields:&mut Vec<Value>,data:&Value,key:&str,name:&str) {if let Some(value)=data[key].as_i64(){field(fields,name,format!("R$ {}",reports::money(value)));}}
@@ -67,6 +67,9 @@ async fn detail(tx:&mut Tx,row:sqlx::sqlite::SqliteRow)->Result<Value> {
    if data["sessionId"].is_null(){field(&mut fields,"Caixa relacionado",value.into());}
    if sqlx::query_scalar::<_,i64>("SELECT COUNT(*) FROM cash_sessions WHERE id=?").bind(value).fetch_one(&mut **tx).await.map_err(|e|e.to_string())?>0 {references.push(json!({"id":value,"label":"Caixa relacionado","route":"/cash","linkLabel":"Histórico de caixa"}));}
   }
+  if ["ADMIN_SETUP","ADMIN_CHANGE"].contains(&kind.as_str()){field(&mut fields,"Proteção","Senha de administrador atualizada; credenciais não são registradas no histórico.".into());}
+  if kind=="ACCRUAL_SETTINGS" {let p=&data["policy"];amount(&mut fields,p,"weeklyCents","Valor por semana");named(&mut fields,p,"mode","Forma de cálculo");if let Some(v)=p["weekdaysOnly"].as_bool(){field(&mut fields,"Dias considerados",if v{"Segunda a sexta"}else{"Todos os dias"}.into());}if let Some(v)=p["enabled"].as_bool(){field(&mut fields,"Novos fiados",if v{"Com acréscimo"}else{"Sem acréscimo"}.into());}}
+  if kind=="ACCRUAL_PLAN" {named(&mut fields,data,"entryId","Débito");named(&mut fields,data,"startDate","Data inicial");if let Some(v)=data["enabled"].as_bool(){field(&mut fields,"Acréscimo",if v{"Ativado"}else{"Encerrado"}.into());}}
   if kind=="CATEGORY" {if let Some(value)=result.as_str(){field(&mut fields,"Categoria criada",value.into());}}
   if let Some(value)=data["categoryId"].as_str(){field(&mut fields,"Categoria informada (ID)",value.into());}
   for (key,name) in [("sessionId","Caixa referenciado"),("paymentId","Recebimento referenciado"),("expenseId","Despesa referenciada")] {named(&mut fields,data,key,name);}

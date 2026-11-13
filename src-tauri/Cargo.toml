@@ -1,6 +1,6 @@
 [package]
 name = "gs_deposito"
-version = "0.1.0"
+version = "0.2.0"
 description = "Sistema offline para gestão de depósito"
 authors = ["G-s-"]
 edition = "2021"

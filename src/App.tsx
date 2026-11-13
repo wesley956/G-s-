@@ -1,3 +1,6 @@
+import { DriversPage } from "./pages/DriversPage";
+import { AccrualSettingsPage } from "./pages/AccrualSettingsPage";
+import { AdminSettingsPage } from "./pages/AdminSettingsPage";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
 import { BackupSettingsPage } from "./pages/BackupSettingsPage";
@@ -25,6 +28,9 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
+        <Route path="/drivers" element={<DriversPage />} />
+        <Route path="/settings/admin" element={<AdminSettingsPage />} />
+        <Route path="/settings/accounts" element={<AccrualSettingsPage />} />
         <Route path="/audit" element={<AuditPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/sales/new" element={<NewSalePage />} />

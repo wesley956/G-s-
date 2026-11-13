@@ -1,22 +1,26 @@
 use super::*;
 use sqlx::{sqlite::{SqliteConnectOptions, SqlitePoolOptions}, Executor};
-struct Fixture { pool: SqlitePool, dir: tempfile::TempDir }
+pub(super) struct Fixture { pub(super) pool: SqlitePool, pub(super) dir: tempfile::TempDir }
 async fn connect(path: &std::path::Path)->SqlitePool {
     SqlitePoolOptions::new().min_connections(3).max_connections(5).connect_with(SqliteConnectOptions::new().filename(path).create_if_missing(true).foreign_keys(true).busy_timeout(std::time::Duration::from_secs(10))).await.unwrap()
 }
-async fn setup()->Fixture {
+pub(super) async fn setup()->Fixture {
     let dir=tempfile::tempdir().unwrap();let pool=connect(&dir.path().join("test.db")).await;
-    for migration in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql"),include_str!("../migrations/0006_suppliers.sql"),include_str!("../migrations/0007_expenses.sql")] {sqlx::raw_sql(migration).execute(&pool).await.unwrap();}
+    for migration in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql"),include_str!("../migrations/0006_suppliers.sql"),include_str!("../migrations/0007_expenses.sql"),include_str!("../migrations/0008_nilson.sql")] {sqlx::raw_sql(migration).execute(&pool).await.unwrap();}
     pool.execute("CREATE TABLE _sqlx_migrations(version BIGINT PRIMARY KEY,description TEXT,installed_on TEXT DEFAULT CURRENT_TIMESTAMP,success BOOLEAN,checksum BLOB,execution_time BIGINT)").await.unwrap();
-    for (index,migration) in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql"),include_str!("../migrations/0006_suppliers.sql"),include_str!("../migrations/0007_expenses.sql")].iter().enumerate() {
+    for (index,migration) in [include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql"),include_str!("../migrations/0006_suppliers.sql"),include_str!("../migrations/0007_expenses.sql"),include_str!("../migrations/0008_nilson.sql")].iter().enumerate() {
         use sha2::{Digest,Sha384};
         sqlx::query("INSERT INTO _sqlx_migrations(version,description,success,checksum,execution_time) VALUES (?, 'test migration',1,?,0)").bind(index as i64+1).bind(Sha384::digest(migration.as_bytes()).to_vec()).execute(&pool).await.unwrap();
     }
+    sqlx::query("INSERT INTO admin_security(singleton,password_hash) VALUES (1,?)").bind(security::hash("teste-admin").unwrap()).execute(&pool).await.unwrap();
     pool.execute("INSERT INTO cash_sessions(id,status,opening_balance_cents) VALUES ('cash','OPEN',10000)").await.unwrap();
     pool.execute("INSERT INTO products(id,name,counter_price_cents,delivery_price_cents,stock_quantity) VALUES ('product','Gás P13',11000,12000,10)").await.unwrap();
     pool.execute("INSERT INTO customers(id,name,phone) VALUES ('customer','José','123')").await.unwrap();Fixture{pool,dir}
 }
-fn operation(kind:&str,data:Value)->Operation {Operation{id:id(),kind:kind.into(),data}}
+pub(super) fn operation(kind:&str,mut data:Value)->Operation {
+    if kind=="CANCEL_SALE" && data.get("adminPassword").is_none(){data["adminPassword"]=json!("teste-admin");}
+    Operation{id:id(),kind:kind.into(),data}
+}
 fn supplier_input()->Value {json!({"name":"  Águas São João  ","contactName":"  José  ","phone":"(19) 99999-0000","whatsapp":"19988880000","document":"12.345.678/0001-99","email":"  contato@agua.example  ","address":"Rua do Comércio, 10","notes":"Entrega terça\nConfirmar pedido","active":true})}
 #[tokio::test]
 async fn supplier_create_edit_status_and_concurrent_replay_preserve_one_record(){
@@ -61,7 +65,7 @@ async fn receive_id(pool:&SqlitePool,amount:i64,method:&str)->String {
     sqlx::query_scalar("SELECT id FROM customer_account_entries WHERE type='PAYMENT' AND status<>'CANCELLED' ORDER BY rowid DESC LIMIT 1").fetch_one(pool).await.unwrap()
 }
 fn refund(payment:&str)->Operation {operation("REFUND_RECEIPT",json!({"paymentId":payment,"customerId":"customer","reason":"Cliente recebeu devolução"}))}
-async fn balance(pool:&SqlitePool)->i64 {
+pub(super) async fn balance(pool:&SqlitePool)->i64 {
     sqlx::query_scalar("SELECT COALESCE(SUM(CASE WHEN status='CANCELLED' THEN 0 WHEN type='PAYMENT' THEN -amount_cents ELSE amount_cents END),0) FROM customer_account_entries").fetch_one(pool).await.unwrap()
 }
 #[tokio::test]
@@ -143,9 +147,9 @@ async fn restoration_accepts_known_v4_and_rejects_incomplete_v5_before_upgrade()
     let broken=f.dir.path().join("broken.sqlite");backup::snapshot(&f.pool,&broken).await.unwrap();let damaged=connect(&broken).await;damaged.execute("DROP TABLE account_payment_refunds").await.unwrap();damaged.close().await;
     assert!(backup::validate_restore(&broken).await.is_err());
 }
-fn input()->Value {json!({"saleType":"DELIVERY","customerId":"customer","discountCents":1000,"items":[{"productId":"product","quantity":1}],"payments":[{"method":"CASH","amountCents":6000,"receivedCents":10000},{"method":"CREDIT_CUSTOMER","amountCents":5000}],"dueDate":"2026-12-01"})}
-async fn count(pool:&SqlitePool,table:&str)->i64 {sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}")).fetch_one(pool).await.unwrap()}
-async fn stock_qty(pool:&SqlitePool)->f64 {sqlx::query_scalar("SELECT stock_quantity FROM products WHERE id='product'").fetch_one(pool).await.unwrap()}
+pub(super) fn input()->Value {json!({"saleType":"DELIVERY","customerId":"customer","discountCents":1000,"items":[{"productId":"product","quantity":1}],"payments":[{"method":"CASH","amountCents":6000,"receivedCents":10000},{"method":"CREDIT_CUSTOMER","amountCents":5000}],"dueDate":"2026-12-01"})}
+pub(super) async fn count(pool:&SqlitePool,table:&str)->i64 {sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}")).fetch_one(pool).await.unwrap()}
+pub(super) async fn stock_qty(pool:&SqlitePool)->f64 {sqlx::query_scalar("SELECT stock_quantity FROM products WHERE id='product'").fetch_one(pool).await.unwrap()}
 #[tokio::test]
 async fn sale_snapshot_rollback_restores_every_table_on_multi_connection_pool(){
  let f=setup().await; assert!(f.pool.size()>=3);
@@ -373,7 +377,7 @@ async fn restoration_preventive_snapshot_recovers_committed_wal_after_process_lo
 }
 fn expense_input(method:&str,amount:i64)->Value {json!({"sessionId":"cash","description":"  Conta d'água  ","category":"  Água  ","amountCents":amount,"method":method,"supplierId":null,"notes":"  Paga no balcão  "})}
 fn expense_refund(expense:&Value,session:&str)->Operation {operation("REFUND_EXPENSE",json!({"expenseId":expense,"sessionId":session,"reason":"Devolução recebida"}))}
-async fn expected(pool:&SqlitePool,session:&str)->i64 {let mut tx=pool.begin_with("BEGIN IMMEDIATE").await.unwrap();let result=cash_expected(&mut tx,session).await.unwrap();tx.rollback().await.unwrap();result}
+pub(super) async fn expected(pool:&SqlitePool,session:&str)->i64 {let mut tx=pool.begin_with("BEGIN IMMEDIATE").await.unwrap();let result=cash_expected(&mut tx,session).await.unwrap();tx.rollback().await.unwrap();result}
 #[tokio::test]
 async fn expenses_and_refunds_only_change_physical_cash_for_cash_method(){
  let f=setup().await;
@@ -426,7 +430,7 @@ async fn late_expense_refund_preserves_closed_cash_and_concurrent_cancel_is_once
 }
 #[tokio::test]
 async fn expense_migration_backfills_legacy_without_new_outflows_and_legacy_api_stays_visible(){
- let f=setup().await;f.pool.execute("DROP TABLE expense_refunds; DROP TABLE expenses; DELETE FROM _sqlx_migrations WHERE version=7").await.unwrap();
+ let f=setup().await;f.pool.execute("DROP TABLE expense_refunds; DROP TABLE expenses; DELETE FROM _sqlx_migrations WHERE version>=7").await.unwrap();
  f.pool.execute("INSERT INTO cash_transactions(id,cash_session_id,type,amount_cents,description,created_at) VALUES ('old','cash','EXPENSE',500,'Histórico antigo','2026-01-01 10:00:00')").await.unwrap();
  f.pool.execute("UPDATE cash_sessions SET status='CLOSED',closing_expected_cents=9500,closing_informed_cents=9500,closed_at=CURRENT_TIMESTAMP").await.unwrap();
  let old=f.dir.path().join("known-v6.sqlite");backup::snapshot(&f.pool,&old).await.unwrap();backup::validate_restore(&old).await.unwrap();

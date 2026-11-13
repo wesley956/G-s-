@@ -8,6 +8,11 @@ async fn main() {
     let pool=sqlx::sqlite::SqlitePoolOptions::new().max_connections(5).connect_with(options).await.unwrap();
     let operation:deposito_domain::Operation=serde_json::from_value(v["operation"].clone()).unwrap();
     let result = match operation.kind.as_str() {
+        "ACCRUAL_POLICY_GET" => deposito_domain::accrual::get_policy(&pool).await.map(|v|serde_json::to_value(v).unwrap()),
+        "ACCRUAL_READ" => deposito_domain::accrual::previews(&pool,operation.data.get("customerId").and_then(serde_json::Value::as_str)).await.map(|v|serde_json::to_value(v).unwrap()),
+        "ACCRUAL_PREVIEW" => serde_json::from_value(operation.data.clone()).map_err(|e|e.to_string()).and_then(|q|deposito_domain::accrual::calculate(q).map(|v|serde_json::to_value(v).unwrap())),
+        "ADMIN_STATUS" => deposito_domain::security::status(&pool).await.map(serde_json::Value::Bool),
+        "RESTORE_AUTHORIZE" => deposito_domain::security::authorize_restore(&pool,operation.data.get("adminPassword").and_then(serde_json::Value::as_str)).await.map(|_|serde_json::Value::Null),
         "AUDIT_READ" => match serde_json::from_value(operation.data.clone()) {Ok(query)=>deposito_domain::audit::read(&pool,query).await.map(|d|serde_json::to_value(d).unwrap()),Err(e)=>Err(e.to_string())},
         "DASHBOARD_READ" => deposito_domain::dashboard::read(&pool).await.map(|d|serde_json::to_value(d).unwrap()),
         "REPORT_READ" | "REPORT_EXPORT" => {

@@ -1,3 +1,4 @@
+import { SettingsLinks } from "../components/SettingsLinks";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { defaultReceiptSettings } from "../lib/receipt";
@@ -30,6 +31,7 @@ export function PrinterSettingsPage() {
       <p className="muted">Defina os dados do depósito e o comportamento após cada venda.</p></div>
       <Link to="/settings/backup" className="secondary-button">Backup dos dados</Link>
     </header>
+    <SettingsLinks />
     {error && <div role="alert" className="feedback error">{error}</div>}
     {feedback && <div role="status" className="feedback success">{feedback}</div>}
     <form onSubmit={save} className="panel receipt-settings-form">

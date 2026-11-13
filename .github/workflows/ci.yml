@@ -46,6 +46,9 @@ jobs:
       - run: npm ci
       - run: npm install --no-save --package-lock=false playwright
       - run: npx playwright install --with-deps chromium
+      - run: node tests/browser-nilson.mjs
+        env:
+          GAS_PLAYWRIGHT_MODULE: playwright
       - run: node tests/browser-receipts.mjs
         env:
           GAS_PLAYWRIGHT_MODULE: playwright
@@ -93,15 +96,32 @@ jobs:
         with:
           workspaces: src-tauri
           cache-on-failure: true
+      - name: Build previous release for upgrade validation
+        shell: pwsh
+        run: |
+          git fetch --depth=1 origin 4a70cd484138c83582749af36f104412ee466aeb
+          $legacyDir = Join-Path $env:RUNNER_TEMP 'gs-legacy-source'
+          git worktree add --detach $legacyDir 4a70cd484138c83582749af36f104412ee466aeb
+          $env:CARGO_TARGET_DIR = Join-Path $env:GITHUB_WORKSPACE 'src-tauri/target'
+          Push-Location $legacyDir
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw 'Legacy npm ci failed' }
+          npm run tauri -- build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { throw 'Legacy installer build failed' }
+          Pop-Location
+          $legacySetup = Get-ChildItem 'src-tauri/target/release/bundle/nsis/*-setup.exe' | Select-Object -First 1
+          Copy-Item $legacySetup.FullName (Join-Path $env:RUNNER_TEMP 'gs-legacy-setup.exe')
+          Remove-Item $legacySetup.FullName
       - run: npm ci
       - run: npm run build
       - run: cargo check --manifest-path src-tauri/Cargo.toml
       - run: cargo test --manifest-path src-tauri/domain/Cargo.toml --target-dir src-tauri/target
+      - run: cargo build --manifest-path src-tauri/domain/Cargo.toml --target-dir src-tauri/target --bin domain-runner
       - run: npm run tauri -- build
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installers-${{ github.run_id }}
-          retention-days: 7
+          retention-days: 90
           if-no-files-found: error
           path: |
             src-tauri/target/release/bundle/nsis/*-setup.exe

@@ -21,6 +21,11 @@ db.exec(`INSERT INTO cash_sessions (id,status,opening_balance_cents) VALUES ('ca
   INSERT INTO customers (id,name,address,phone) VALUES ('customer','José da Conceição','Rua das Águas, 20','(19) 98888-0000');`);
 const settings = { businessName: "Depósito São João", document: "12.345.678/0001-99", address: "Rua do Comércio, 100 - Nova Odessa/SP", phone: "(19) 99999-0000", footer: "Obrigado pela preferência!", paperFormat: "80mm", printMode: "ASK" };
 db.prepare("INSERT INTO app_settings (key,value) VALUES ('receipt_settings',?)").run(JSON.stringify(settings));
+// Seed the responsible user's password without polluting the operation-history fixtures.
+const adminFixtureId=crypto.randomUUID();
+await nativeOperation(dbPath,{id:adminFixtureId,kind:"ADMIN_SETUP",data:{newPassword:"teste-admin"}});
+db.prepare("DELETE FROM operation_results WHERE id=?").run(adminFixtureId);
+db.exec("INSERT INTO delivery_drivers(id,name,phone,active) VALUES ('driver','Marcos Entregador','19988887777',1)");
 const bridge = `<script>
 window.__consoleErrors = [];
 window.addEventListener('error', e => window.__consoleErrors.push(e.message));
@@ -32,6 +37,7 @@ window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
   const auditDelay = command === 'get_audit' ? window.__delayAudit || 0 : 0;
   if (command === 'get_dashboard' && window.__failDashboard) throw new Error('Falha simulada ao consultar painel');
   const dashboardDelay = command === 'get_dashboard' ? window.__delayDashboard || 0 : 0;
+  const accrualDelay = command === 'get_accruals' && args.customerId === window.__delayAccrualCustomer ? window.__delayAccrualMillis || 0 : 0;
   if (command === 'export_report_csv' && window.__failReportExport) throw new Error('Falha simulada ao salvar CSV');
   if (command === 'export_report_csv') args = { ...args, cancelExport: Boolean(window.__cancelReportExport) };
   if (command === 'save_receipt_pdf' && window.__cancelPdf) return null;
@@ -41,7 +47,9 @@ window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
   const result = await response.json(); if (result.error) throw new Error(result.error);
   if (auditDelay) { await new Promise(resolve => setTimeout(resolve, auditDelay)); window.__auditDelaysCompleted = (window.__auditDelaysCompleted || 0) + 1; }
   if (dashboardDelay) { await new Promise(resolve => setTimeout(resolve, dashboardDelay)); window.__dashboardDelaysCompleted = (window.__dashboardDelaysCompleted || 0) + 1; }
+  if (accrualDelay) { await new Promise(resolve => setTimeout(resolve, accrualDelay)); window.__accrualDelaysCompleted = (window.__accrualDelaysCompleted || 0) + 1; }
   if (command === 'write_operation' && args.operation.kind === 'RECEIVE' && window.__losePaymentResponseOnce) { window.__losePaymentResponseOnce=false; throw new Error('Resposta interrompida após gravar recebimento'); }
+  if (command === 'write_operation' && args.operation.kind === 'DEBIT' && window.__loseDebitResponseOnce) { window.__loseDebitResponseOnce=false; throw new Error('Resposta interrompida após gravar débito'); }
   if (command === 'write_operation' && args.operation.kind === 'REFUND_RECEIPT' && window.__loseRefundResponseOnce) { window.__loseRefundResponseOnce=false; throw new Error('Resposta interrompida após gravar estorno'); }
   if (command === 'write_operation' && args.operation.kind === 'SUPPLIER' && window.__loseSupplierResponseOnce) { window.__loseSupplierResponseOnce=false; throw new Error('Resposta interrompida após gravar fornecedor'); }
   if (command === 'write_operation' && args.operation.kind === 'SUPPLIER_ACTIVE' && window.__loseSupplierStatusResponseOnce) { window.__loseSupplierStatusResponseOnce=false; throw new Error('Resposta interrompida após alterar fornecedor'); }
@@ -71,6 +79,7 @@ export const server = await createServer({
         }
         else if (command === "backup_status") value = {restoreReport,automaticError:null};
         else if (command === "restore_backup") {
+          await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"RESTORE_AUTHORIZE",data:{adminPassword:args.adminPassword}});
           if (!args.backupId) {value=false;}
           else {
             const directory="tmp/browser-recovery";rmSync(directory,{force:true,recursive:true});
@@ -85,6 +94,10 @@ export const server = await createServer({
           const path = `tmp/exported/${args.backupId}`;
           await copyFile(`tmp/browser-backups/${args.backupId}`,path); value=path;
         }
+        else if (command === "get_admin_status") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"ADMIN_STATUS",data:{}});
+        else if (command === "get_accrual_policy") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"ACCRUAL_POLICY_GET",data:{}});
+        else if (command === "get_accruals") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"ACCRUAL_READ",data:{customerId:args.customerId}});
+        else if (command === "preview_accrual") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"ACCRUAL_PREVIEW",data:args.query});
         else if (command === "get_audit") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"AUDIT_READ",data:args.query});
         else if (command === "get_dashboard") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"DASHBOARD_READ",data:{}});
         else if (command === "get_report") value = await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"REPORT_READ",data:args.period});

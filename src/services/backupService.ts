@@ -14,4 +14,4 @@ export function getBackupPolicy() { return command<BackupPolicy>('get_backup_pol
 export function setBackupPolicy(policy: BackupPolicy) { return command<void>('set_backup_policy', { policy }); }
 export function checkBackupSchedule() { return command<Backup | null>('check_backup_schedule'); }
 export function getBackupStatus() { return invoke<BackupStatus>('backup_status'); }
-export function restoreBackup(backupId: string | null) { return command<boolean>('restore_backup', { backupId }); }
+export function restoreBackup(backupId: string | null, adminPassword:string) { return command<boolean>('restore_backup', { backupId,adminPassword }); }

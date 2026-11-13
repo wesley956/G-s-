@@ -39,9 +39,10 @@ pub async fn check_backup_schedule(app: tauri::AppHandle) -> Result<Option<domai
     result
 }
 #[tauri::command]
-pub async fn restore_backup(app: tauri::AppHandle, backup_id: Option<String>) -> Result<bool,String> {
+pub async fn restore_backup(app: tauri::AppHandle, backup_id: Option<String>, admin_password:Option<String>) -> Result<bool,String> {
     let state=app.state::<BackupState>();let _guard=state.restore_lock.lock().await;
     if state.restoring.load(Ordering::SeqCst) {return Err("Reinicie para concluir a recuperação pendente.".into());}
+    domain::security::authorize_restore(&database_pool(&app).await?,admin_password.as_deref()).await?;
     let source=if let Some(id)=backup_id {
         domain::backup::selected(&backup_directory(&app)?,&id)?
     } else {

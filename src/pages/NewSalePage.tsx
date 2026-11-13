@@ -1,5 +1,9 @@
+import { getAccrualPolicy, localDay, type AccrualPolicy } from "../services/accrualService";
 import { Minus, Plus, Search, ShoppingCart, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { getOpenCashSession } from "../services/cashService";
+import { listDrivers, type Driver } from "../services/driverService";
 import { previewCents, toCents, parseDecimal } from "../lib/money";
 import { ReceiptDialog } from "../components/receipts/ReceiptDialog";
 import { listActiveCustomers } from "../services/customerService";
@@ -29,26 +33,40 @@ export function NewSalePage() {
   const [received, setReceived] = useState("");
   const [mixed, setMixed] = useState(false);
   const [split, setSplit] = useState<Partial<Record<PaymentMethod, string>>>({});
+  const [accrualPolicy,setAccrualPolicy]=useState<AccrualPolicy|null>(null);
+  const [accrualStart,setAccrualStart]=useState(localDay);
   const [dueDate, setDueDate] = useState("");
+  const [drivers,setDrivers]=useState<Driver[]>([]);
+  const [deliveryAddress,setDeliveryAddress]=useState("");
+  const [deliveryNumber,setDeliveryNumber]=useState("");
+  const [driverId,setDriverId]=useState("");
   const attempt = useRef<{signature: string; id: string} | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [cashOpen, setCashOpen] = useState(false);
   const savingRef = useRef(false);
   const [lastSaleId, setLastSaleId] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<{ saleId: string; autoCopies?: 1 | 2 } | null>(null);
 
   async function loadBaseData() {
-    const [productRows, customerRows] = await Promise.all([
+    const [productRows, customerRows, session, driverRows, accrualRule] = await Promise.all([
       listSaleProducts(),
       listActiveCustomers(),
+      getOpenCashSession(),
+      listDrivers(),
+      getAccrualPolicy(),
     ]);
     setProducts(productRows);
     setCustomers(customerRows);
+    setCashOpen(Boolean(session));
+    setDrivers(driverRows.filter(d=>d.active));
+    setAccrualPolicy(accrualRule);
   }
 
   useEffect(() => {
-    void loadBaseData().catch((err) => setError(err instanceof Error ? err.message : "Não foi possível carregar os dados."));
+    void loadBaseData().catch((err) => setError(err instanceof Error ? err.message : "Não foi possível carregar os dados.")).finally(() => setLoading(false));
   }, []);
 
   const filteredProducts = useMemo(() => {
@@ -106,6 +124,8 @@ export function NewSalePage() {
     if (savingRef.current) return;
     setError(null);
     setFeedback(null);
+    if (!cashOpen) { setError("Abra o caixa antes de finalizar a venda."); return; }
+    if (!cart.length || total <= 0) { setError("Adicione um produto com valor maior que zero à venda."); return; }
 
     let payments: PaymentInput[];
     try {
@@ -114,13 +134,15 @@ export function NewSalePage() {
       if (discountMode === "VALUE" && toCents(discount) > subtotal) throw new Error("Desconto maior que o subtotal.");
       payments = mixed ? (Object.keys(paymentLabels) as PaymentMethod[]).flatMap(method => {
         const amountCents = toCents(split[method] || "");
-        return amountCents ? [{ method, amountCents, receivedCents: method === "CASH" ? toCents(received) : null }] : [];
-      }) : [{ method: paymentMethod, amountCents: total, receivedCents: paymentMethod === "CASH" ? toCents(received) : null }];
+        return amountCents ? [{ method, amountCents, receivedCents: method === "CASH" ? (received.trim() ? toCents(received) : amountCents) : null }] : [];
+      }) : [{ method: paymentMethod, amountCents: total, receivedCents: paymentMethod === "CASH" ? (received.trim() ? toCents(received) : total) : null }];
       if (hasCredit && !customerId) throw new Error("Selecione o cliente para vender fiado.");
+      if(saleType==="DELIVERY" && (!deliveryAddress.trim() || !deliveryNumber.trim() || !driverId)) throw new Error("Informe o endereço, o número e o entregador da entrega.");
       if (payments.reduce((sum,p) => sum+p.amountCents,0) !== total) throw new Error("A soma dos pagamentos deve ser igual ao total.");
-      if (cashAmount > 0 && toCents(received) < cashAmount) throw new Error("O valor recebido em dinheiro é menor que a parcela em dinheiro.");
+      if (cashAmount > 0 && received.trim() && toCents(received) < cashAmount) throw new Error("O valor recebido em dinheiro é menor que a parcela em dinheiro.");
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); return; }
-    const signature = JSON.stringify({ saleType, customerId, cart, safeDiscount, payments, dueDate });
+    const delivery=saleType==="DELIVERY"?{address:deliveryAddress,number:deliveryNumber,driverId}:undefined;
+    const signature = JSON.stringify({ saleType, customerId, cart, safeDiscount, payments, dueDate, delivery, accrualStart });
     if (attempt.current?.signature !== signature) attempt.current = { signature, id: crypto.randomUUID() };
 
     savingRef.current = true;
@@ -132,6 +154,7 @@ export function NewSalePage() {
         items: cart,
         discountCents: safeDiscount,
         payments, dueDate, operationId: attempt.current!.id,
+        delivery,accrualStartDate:accrualStart,
       });
       setFeedback(`Venda #${result.saleNumber} finalizada — ${formatCurrency(result.totalCents)}`);
       setLastSaleId(result.saleId);
@@ -139,8 +162,10 @@ export function NewSalePage() {
       setCart([]);
       setSplit({});
       setDueDate("");
+      setAccrualStart(localDay());
       setDiscount("");
       setReceived("");
+      setDeliveryAddress("");setDeliveryNumber("");
       if (paymentMethod !== "CREDIT_CUSTOMER") setCustomerId("");
       if (result.printMode !== "NEVER") {
         setReceipt({
@@ -168,6 +193,7 @@ export function NewSalePage() {
         </div>
       </header>
 
+      {!loading && !cashOpen && <div className="feedback error" role="status">O caixa está fechado. <Link to="/cash">Abrir caixa</Link> para finalizar vendas.</div>}
       <div className="sale-type-selector">
         <button className={saleType === "COUNTER" ? "selected" : ""} onClick={() => setSaleType("COUNTER")}>PORTARIA</button>
         <button className={saleType === "DELIVERY" ? "selected" : ""} onClick={() => setSaleType("DELIVERY")}>ENTREGA</button>
@@ -231,6 +257,13 @@ export function NewSalePage() {
             <div className="grand-total"><span>TOTAL</span><strong>{formatCurrency(total)}</strong></div>
           </div>
 
+          {saleType==="DELIVERY" && <fieldset className="delivery-fields" disabled={saving}><legend>Dados da entrega</legend>
+            <label className="field"><span>Endereço da entrega</span><input maxLength={240} value={deliveryAddress} onChange={e=>setDeliveryAddress(e.target.value)} placeholder="Rua, bairro e complemento"/></label>
+            <label className="field"><span>Número da entrega</span><input maxLength={30} value={deliveryNumber} onChange={e=>setDeliveryNumber(e.target.value)} placeholder="Número ou s/n"/></label>
+            <label className="field"><span>Entregador responsável</span><select value={driverId} onChange={e=>setDriverId(e.target.value)}><option value="">Selecione...</option>{drivers.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
+            {!drivers.length && <p className="muted">Nenhum entregador ativo. <Link to="/drivers">Cadastrar entregador</Link>.</p>}
+            <p className="muted">O endereço, os produtos e o entregador sairão no comprovante. No retorno, finalize a entrega em Vendas.</p>
+          </fieldset>}
           <div className="payment-section">
             <span className="field-label">Pagamento</span>
             <div className="payment-grid">
@@ -248,6 +281,7 @@ export function NewSalePage() {
               </label>)}
               <p className="muted">Falta distribuir: {formatCurrency(total - Object.values(split).reduce((sum,amount) => sum + previewCents(amount || ""),0))}</p>
             </div>}
+            {hasCredit && accrualPolicy?.enabled && <label className="field"><span>Data inicial do acréscimo</span><input type="date" aria-label="Data inicial do acréscimo" aria-describedby="sale-accrual-help" value={accrualStart} onChange={e=>setAccrualStart(e.target.value)}/><small id="sale-accrual-help">Acréscimo: {formatCurrency(accrualPolicy.weeklyCents)}/semana, {accrualPolicy.mode==="DAILY"?"proporcional por dia":"semanas completas"}, {accrualPolicy.weekdaysOnly?"segunda a sexta":"todos os dias"}. Exclui o dia inicial.</small></label>}
             {hasCredit && <label className="field"><span>Vencimento do fiado (opcional)</span><input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} /></label>}
 
             <label className="field sale-customer-field">
@@ -263,7 +297,7 @@ export function NewSalePage() {
             {cashAmount > 0 && (
               <>
                 <label className="field">
-                  <span>Valor recebido</span>
+                  <span>Valor recebido (opcional se for exato)</span>
                   <div className="money-input"><span>R$</span><input value={received} onChange={(e) => setReceived(e.target.value)} inputMode="decimal" /></div>
                 </label>
                 <div className="change-box"><span>Troco</span><strong>{formatCurrency(change)}</strong></div>
@@ -275,12 +309,13 @@ export function NewSalePage() {
             )}
           </div>
 
-          {error && <div className="feedback error">{error}</div>}
+          {error && <div className="feedback error" role="alert">{error}</div>}
           {feedback && <div className="feedback success">{feedback}</div>}
           {lastSaleId && <button className="secondary-button" disabled={saving} onClick={() => setReceipt({ saleId: lastSaleId })}>Ver / imprimir último comprovante</button>}
 
-          <button className="primary-button finish-sale-button" disabled={saving || cart.length === 0 || total <= 0} onClick={finish}>
-            {saving ? "Finalizando..." : "Finalizar venda"}
+          <p className="muted" id="sale-readiness" role="status">{loading ? "Carregando produtos e caixa..." : !cashOpen ? "Abra o caixa para concluir a venda." : !cart.length ? "Clique em um produto para adicioná-lo ao pedido." : total <= 0 ? "O total da venda deve ser maior que zero." : cashAmount > 0 && !received.trim() ? "Sem valor recebido informado, será considerado o pagamento exato, sem troco." : "Confira os produtos e pagamentos antes de finalizar."}</p>
+          <button className="primary-button finish-sale-button" aria-busy={saving} aria-describedby="sale-readiness" disabled={loading || !cashOpen || saving || cart.length === 0 || total <= 0} onClick={finish}>
+            {saving ? "Finalizando..." : loading ? "Carregando..." : "Finalizar venda"}
           </button>
         </aside>
       </div>

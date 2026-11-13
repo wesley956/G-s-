@@ -1,3 +1,6 @@
+import { AccrualControls } from "../components/AccrualControls";
+import { getAccrualPolicy, localDay } from "../services/accrualService";
+import { toCents } from "../lib/money";
 import { receiptDate } from "../lib/receipt";
 import { ArrowLeft, CircleDollarSign, FilePlus2 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -15,22 +18,38 @@ export function CustomerAccountPage() {
   const [entries, setEntries] = useState<AccountEntry[]>([]);
   const [debitAmount, setDebitAmount] = useState("");
   const [debitDescription, setDebitDescription] = useState("");
+  const [accrualEnabled,setAccrualEnabled]=useState(false);
+  const [accrualStart,setAccrualStart]=useState(localDay);
   const [dueDate, setDueDate] = useState("");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("PIX");
   const busy = useRef(false);
   const paymentAttempt = useRef<{signature:string; id:string} | null>(null);
+  const debitAttempt = useRef<{signature:string; id:string} | null>(null);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const currentCustomer=useRef(customerId);
+  currentCustomer.current=customerId;
+  const loadVersion=useRef(0);
 
   async function load() {
-    const [customerRow, entryRows] = await Promise.all([getCustomer(customerId), listAccountEntries(customerId)]);
+    if(currentCustomer.current!==customerId)return;
+    const version=++loadVersion.current;
+    const [customerRow, entryRows, policy] = await Promise.all([getCustomer(customerId), listAccountEntries(customerId),getAccrualPolicy()]);
+    if(currentCustomer.current!==customerId || loadVersion.current!==version)return;
+    setAccrualEnabled(policy.enabled);
     setCustomer(customerRow);
     setEntries(entryRows);
   }
 
-  useEffect(() => { void load().catch(err => setError(String(err))); }, [customerId]);
+  useEffect(() => {
+    setCustomer(null);setEntries([]);setRefundEntry(null);setError(null);setFeedback(null);
+    setDebitAmount("");setDebitDescription("");setDueDate("");setPaymentAmount("");setAccrualStart(localDay());
+    paymentAttempt.current=null;debitAttempt.current=null;
+    void load().catch(err=>{if(currentCustomer.current===customerId)setError(String(err));});
+    return()=>{loadVersion.current++;};
+  }, [customerId]);
 
   const balance = useMemo(() => entries.reduce((sum, entry) => {
     if (entry.status === "CANCELLED") return sum;
@@ -40,15 +59,18 @@ export function CustomerAccountPage() {
   async function submitDebit(event: FormEvent) {
     event.preventDefault(); if (busy.current) return; busy.current = true; setSaving(true); setError(null); setFeedback(null);
     try {
-      await addManualDebit({ customerId, description: debitDescription, amount: debitAmount, dueDate });
-      setDebitAmount(""); setDebitDescription(""); setDueDate(""); setFeedback("Lançamento adicionado."); await load();
+      const signature=JSON.stringify({customerId,description:debitDescription.trim(),amountCents:toCents(debitAmount),dueDate,accrualStart});
+      if(debitAttempt.current?.signature!==signature)debitAttempt.current={signature,id:crypto.randomUUID()};
+      await addManualDebit({ customerId, description: debitDescription, amount: debitAmount, dueDate,accrualStartDate:accrualStart,operationId:debitAttempt.current!.id });
+      debitAttempt.current=null;
+      setDebitAmount(""); setDebitDescription(""); setDueDate(""); setAccrualStart(localDay()); setFeedback("Lançamento adicionado."); await load();
     } catch (err) { setError(err instanceof Error ? err.message : "Não foi possível lançar."); } finally { busy.current = false; setSaving(false); }
   }
 
   async function submitPayment(event: FormEvent) {
     event.preventDefault(); if (busy.current) return; busy.current = true; setSaving(true); setError(null); setFeedback(null);
     try {
-      const signature = JSON.stringify({customerId, paymentAmount, paymentMethod});
+      const signature = JSON.stringify({customerId, amountCents:toCents(paymentAmount), paymentMethod});
       if (paymentAttempt.current?.signature !== signature) paymentAttempt.current = {signature, id:crypto.randomUUID()};
       await receiveCustomerPayment({ customerId, amount: paymentAmount, method: paymentMethod, description: "Pagamento de caderneta", operationId: paymentAttempt.current.id });
       paymentAttempt.current = null;
@@ -56,7 +78,7 @@ export function CustomerAccountPage() {
     } catch (err) { setError(err instanceof Error ? err.message : "Não foi possível receber."); } finally { busy.current = false; setSaving(false); }
   }
 
-  if (!customer) return <section>{error ? <div className="feedback error">{error}</div> : <p className="muted">Carregando cliente...</p>}</section>;
+  if (!customer || customer.id!==customerId) return <section>{error ? <div className="feedback error">{error}</div> : <p className="muted">Carregando cliente...</p>}</section>;
 
   return (
     <section>
@@ -68,7 +90,7 @@ export function CustomerAccountPage() {
         <div className="account-balance-box"><span>Saldo em aberto</span><strong>{formatCurrency(balance)}</strong></div>
       </header>
 
-      {error && <div className="feedback error">{error}</div>}
+      {error && <div className="feedback error" role="alert">{error}</div>}
       {feedback && <div className="feedback success">{feedback}</div>}
 
       {refundEntry && <ReceiptRefundDialog entry={refundEntry} onClose={() => setRefundEntry(null)} onSuccess={() => { setRefundEntry(null); setFeedback("Recebimento estornado. Os débitos foram reabertos."); void load().catch(err => setError(String(err))); }} />}
@@ -78,6 +100,7 @@ export function CustomerAccountPage() {
           <label className="field"><span>Descrição</span><input value={debitDescription} onChange={(e) => setDebitDescription(e.target.value)} placeholder="Ex.: Nota de água - outubro" /></label>
           <label className="field"><span>Valor</span><div className="money-input"><span>R$</span><input value={debitAmount} onChange={(e) => setDebitAmount(e.target.value)} inputMode="decimal" required /></div></label>
           <label className="field"><span>Vencimento</span><input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></label>
+          {accrualEnabled&&<label className="field"><span>Data inicial do acréscimo</span><input type="date" required value={accrualStart} onChange={e=>setAccrualStart(e.target.value)}/></label>}
           <button disabled={saving} className="secondary-button cash-main-button">Adicionar débito</button>
         </form>
 
@@ -91,7 +114,9 @@ export function CustomerAccountPage() {
         </form>
       </div>
 
+      <AccrualControls key={customerId} entries={entries} onSuccess={()=>{void load().catch(e=>setError(String(e)));}}/>
       <div className="panel">
+        <p className="muted">O saldo inclui os acréscimos calculados até hoje. Linhas “Calculado” são uma prévia; tornam-se lançamentos confirmados ao receber um pagamento ou encerrar a regra.</p>
         <div className="panel-heading-row"><div><p className="eyebrow">Histórico</p><h2>Movimentações da caderneta</h2></div></div>
         <div className="data-table-wrapper">
           <table className="data-table">
@@ -102,7 +127,7 @@ export function CustomerAccountPage() {
                 <td>{entry.description || "—"}{entry.refund_reason && <small className="refund-history">Estornado: {entry.refund_reason} · {entry.refunded_at && receiptDate(entry.refunded_at)}</small>}</td>
                 <td>{entry.due_date ? new Date(entry.due_date + "T12:00:00").toLocaleDateString("pt-BR") : "—"}</td>
                 <td>{entry.type === "PAYMENT" ? `Pagamento · ${receiptMethodNames[entry.payment_method || ""] || "forma não vinculada"}` : entry.sale_id ? "Venda fiado" : "Lançamento"}</td>
-                <td>{entry.status === "CANCELLED" ? (entry.type === "PAYMENT" ? "Estornado" : "Cancelado") : entry.type === "PAYMENT" || entry.status === "PAID" ? "Quitado" : entry.status === "PARTIAL" ? "Parcial" : "Em aberto"}</td>
+                <td>{entry.status === "CANCELLED" ? (entry.type === "PAYMENT" ? "Estornado" : "Cancelado") : entry.accrual_preview ? "Calculado" : entry.type === "PAYMENT" || entry.status === "PAID" ? "Quitado" : entry.status === "PARTIAL" ? "Parcial" : "Em aberto"}</td>
                 <td className={entry.type === "PAYMENT" ? "positive-text" : "warning-text"}>{entry.type === "PAYMENT" ? "- " : "+ "}{formatCurrency(entry.amount_cents)}</td>
                 <td>{entry.type === "PAYMENT" || entry.status === "CANCELLED" ? "—" : formatCurrency(entry.amount_cents - (entry.paid_cents || 0))}</td>
                 <td>{entry.type === "PAYMENT" && entry.status !== "CANCELLED" ? entry.receipt_transaction_id ? <button className="secondary-button" disabled={saving} onClick={() => setRefundEntry(entry)}>Estornar</button> : <span className="muted" title="Recebimento antigo sem vínculo direto ao caixa. Exige revisão do histórico.">Revisar histórico</span> : "—"}</td>

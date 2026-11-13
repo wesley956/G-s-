@@ -27,6 +27,7 @@ const items = [
   ["/accounts", "Cadernetas", ReceiptText],
   ["/cash", "Caixa", WalletCards],
   ["/expenses", "Despesas", CircleDollarSign],
+  ["/drivers", "Entregadores", Truck],
   ["/suppliers", "Fornecedores", Truck],
   ["/reports", "Relatórios", BarChart3],
   ["/audit", "Auditoria", History],
@@ -58,10 +59,10 @@ export function AppShell() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">GS</div>
+          <div className="brand-mark">N</div>
           <div>
-            <strong>G-s-</strong>
-            <span>Gestão de Depósito</span>
+            <strong>Nilson</strong>
+            <span>gás e Água</span>
           </div>
         </div>
 

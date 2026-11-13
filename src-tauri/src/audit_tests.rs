@@ -53,14 +53,23 @@ async fn audit_local_period_is_inclusive_and_empty_result_keeps_first_page(){
 #[tokio::test]
 async fn audit_all_native_kinds_survive_backup_reopen_with_original_values(){
  let f=setup().await;
- let sale=apply(&f.pool,operation("SALE",input())).await.unwrap();let payment=receive_id(&f.pool,5000,"PIX").await;apply(&f.pool,refund(&payment)).await.unwrap();apply(&f.pool,operation("CANCEL_SALE",json!({"saleId":sale["saleId"],"reason":"Retorno confirmado"}))).await.unwrap();
+ let driver=apply(&f.pool,operation("DRIVER",json!({"name":"Entregador da auditoria","phone":"19999990000","active":true}))).await.unwrap();
+ let mut sale_input=input();sale_input["delivery"]=json!({"driverId":driver,"address":"Rua de teste","number":"10"});
+ let sale=apply(&f.pool,operation("SALE",sale_input)).await.unwrap();
+ apply(&f.pool,operation("DELIVER",json!({"saleId":sale["saleId"]}))).await.unwrap();let payment=receive_id(&f.pool,5000,"PIX").await;apply(&f.pool,refund(&payment)).await.unwrap();apply(&f.pool,operation("CANCEL_SALE",json!({"saleId":sale["saleId"],"reason":"Retorno confirmado"}))).await.unwrap();
  apply(&f.pool,operation("STOCK",json!({"productId":"product","action":"ENTRY","quantity":2,"reason":"Reposição"}))).await.unwrap();
  apply(&f.pool,operation("DEBIT",json!({"customerId":"customer","amountCents":1001,"description":"Lançamento manual"}))).await.unwrap();
  let supplier=apply(&f.pool,operation("SUPPLIER",supplier_input())).await.unwrap();apply(&f.pool,operation("SUPPLIER_ACTIVE",json!({"id":supplier,"active":false}))).await.unwrap();
  let category=apply(&f.pool,operation("CATEGORY",json!({"name":"Categoria da auditoria"}))).await.unwrap();apply(&f.pool,operation("PRODUCT",json!({"name":"Água nova","categoryId":category,"costPriceCents":101,"counterPriceCents":201,"deliveryPriceCents":301,"stockQuantity":4,"minimumStock":2,"active":true}))).await.unwrap();
  let expense=apply(&f.pool,operation("EXPENSE",expense_input("CASH",101))).await.unwrap();apply(&f.pool,expense_refund(&expense,"cash")).await.unwrap();apply(&f.pool,operation("CASH_MOVE",json!({"sessionId":"cash","type":"SUPPLY","amountCents":1001,"description":"Troco"}))).await.unwrap();
  apply(&f.pool,operation("CLOSE_CASH",json!({"sessionId":"cash","informedCents":10001}))).await.unwrap();apply(&f.pool,operation("OPEN_CASH",json!({"amountCents":1001}))).await.unwrap();
- let page=audit::read(&f.pool,query()).await.unwrap();assert_eq!(page.total,15);
+ f.pool.execute("DELETE FROM admin_security").await.unwrap();
+ apply(&f.pool,operation("ADMIN_SETUP",json!({"newPassword":"teste-admin"}))).await.unwrap();
+ apply(&f.pool,operation("ADMIN_CHANGE",json!({"adminPassword":"teste-admin","newPassword":"novo-admin"}))).await.unwrap();
+ apply(&f.pool,operation("ACCRUAL_SETTINGS",json!({"adminPassword":"novo-admin","policy":{"enabled":true,"weeklyCents":500,"mode":"DAILY","weekdaysOnly":true}}))).await.unwrap();
+ let debt:String=sqlx::query_scalar("SELECT id FROM customer_account_entries WHERE type='DEBIT' AND sale_id IS NULL").fetch_one(&f.pool).await.unwrap();
+ apply(&f.pool,operation("ACCRUAL_PLAN",json!({"adminPassword":"novo-admin","entryId":debt,"enabled":true}))).await.unwrap();
+ let page=audit::read(&f.pool,query()).await.unwrap();assert_eq!(page.total,21);
  for kind in audit::KINDS.iter().filter(|&&k|k!="UNKNOWN") {let item=page.items.iter().find(|i|i["kind"]==*kind).unwrap();assert!(item["warning"].is_null(),"{item}");assert!(!item["fields"].as_array().unwrap().is_empty(),"{item}");}
  let close=page.items.iter().find(|i|i["kind"]=="CLOSE_CASH").unwrap();assert!(close["fields"].as_array().unwrap().iter().any(|f|f["label"]=="Diferença no fechamento"));
  let copy=f.dir.path().join("audit.sqlite");backup::snapshot(&f.pool,&copy).await.unwrap();backup::validate_restore(&copy).await.unwrap();let reopened=connect(&copy).await;
