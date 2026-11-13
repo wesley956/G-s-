@@ -280,7 +280,7 @@ export function NewSalePage() {
               </label>)}
               <p className="muted">Falta distribuir: {formatCurrency(total - Object.values(split).reduce((sum,amount) => sum + previewCents(amount || ""),0))}</p>
             </div>}
-            {hasCredit && accrualPolicy?.enabled && <label className="field"><span>Data inicial do acréscimo</span><input type="date" value={accrualStart} onChange={e=>setAccrualStart(e.target.value)}/><small>Acréscimo: {formatCurrency(accrualPolicy.weeklyCents)}/semana, {accrualPolicy.mode==="DAILY"?"proporcional por dia":"semanas completas"}, {accrualPolicy.weekdaysOnly?"segunda a sexta":"todos os dias"}. Exclui o dia inicial.</small></label>}
+            {hasCredit && accrualPolicy?.enabled && <label className="field"><span>Data inicial do acréscimo</span><input type="date" aria-label="Data inicial do acréscimo" aria-describedby="sale-accrual-help" value={accrualStart} onChange={e=>setAccrualStart(e.target.value)}/><small id="sale-accrual-help">Acréscimo: {formatCurrency(accrualPolicy.weeklyCents)}/semana, {accrualPolicy.mode==="DAILY"?"proporcional por dia":"semanas completas"}, {accrualPolicy.weekdaysOnly?"segunda a sexta":"todos os dias"}. Exclui o dia inicial.</small></label>}
             {hasCredit && <label className="field"><span>Vencimento do fiado (opcional)</span><input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} /></label>}
 
             <label className="field sale-customer-field">

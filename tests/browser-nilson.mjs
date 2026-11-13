@@ -16,6 +16,10 @@ try{
  const finish=()=>page.getByRole('button',{name:'Finalizar venda',exact:true});
  await finish().waitFor();assert.equal(await finish().isDisabled(),true);assert.equal(await finish().evaluate(b=>getComputedStyle(b).cursor),'not-allowed');
  await page.getByText('Clique em um produto para adicioná-lo ao pedido.',{exact:true}).waitFor();
+ db.exec("DELETE FROM admin_security");await page.goto('http://127.0.0.1:1420/#/settings/admin');await page.getByRole('heading',{name:'Cadastrar senha do responsável'}).waitFor();
+ await page.getByLabel('Nova senha',{exact:true}).fill('teste-admin');await page.getByLabel('Confirmar nova senha',{exact:true}).fill('teste-admin');await page.getByRole('button',{name:'Salvar senha',exact:true}).click();await page.getByText('Senha de administrador salva.',{exact:true}).waitFor();
+ await page.goto('http://127.0.0.1:1420/#/drivers');await page.getByLabel('Nome do entregador').fill('Rogério Teste');await page.getByLabel('Telefone do entregador').fill('19977776666');await page.getByRole('button',{name:'Salvar entregador'}).click();await page.getByRole('row').filter({hasText:'Rogério Teste'}).waitFor();
+ await page.goto('http://127.0.0.1:1420/#/sales/new');
  db.exec("UPDATE cash_sessions SET status='CLOSED'");await page.reload();await page.getByRole('link',{name:'Abrir caixa',exact:true}).waitFor();
  await page.getByRole('button',{name:/Gás P13/}).click();assert.equal(await finish().isDisabled(),true);
  db.exec("UPDATE cash_sessions SET status='OPEN'");await page.reload();await page.getByRole('button',{name:/Gás P13/}).click();
@@ -28,7 +32,7 @@ try{
  await finish().click();await page.getByRole('heading',{name:'Comprovante #2',exact:true}).waitFor();
  assert.match(await page.locator('.receipt-paper').innerText(),/Rua do Depósito, 55/);assert.match(await page.locator('.receipt-paper').innerText(),/Marcos Entregador/);
  await page.getByRole('button',{name:'Não imprimir / fechar'}).click();
- await op('DRIVER',{id:'driver',name:'Marcos alterado',phone:'123',active:false});
+ await page.goto('http://127.0.0.1:1420/#/drivers');await page.getByRole('row').filter({hasText:'Marcos Entregador'}).getByRole('button',{name:'Editar',exact:true}).click();await page.getByLabel('Nome do entregador').fill('Marcos alterado');await page.getByLabel('Telefone do entregador').fill('123');await page.getByLabel('Situação do entregador').selectOption('no');await page.getByRole('button',{name:'Salvar entregador'}).click();await page.getByText('Entregador salvo.',{exact:true}).waitFor();
  await page.goto('http://127.0.0.1:1420/#/sales');const deliveryRow=page.getByRole('row').filter({hasText:'#2'});
  await deliveryRow.getByRole('button',{name:'Finalizar entrega / comprovante'}).click();await page.getByRole('heading',{name:'Comprovante #2',exact:true}).waitFor();
  assert.match(await page.locator('.receipt-paper').innerText(),/Entrega finalizada/);assert.match(await page.locator('.receipt-paper').innerText(),/Marcos Entregador/);assert.doesNotMatch(await page.locator('.receipt-paper').innerText(),/Marcos alterado/);
@@ -41,7 +45,7 @@ try{
  await page.goto('http://127.0.0.1:1420/#/settings/accounts');
  await page.getByLabel('Acréscimo em novos fiados').selectOption('on');await page.getByLabel('Forma de cálculo').selectOption('DAILY');
  await page.getByLabel('Data inicial da prévia').fill('2026-11-06');await page.getByLabel('Data final da prévia').fill('2026-11-09');await page.getByRole('button',{name:'Calcular prévia'}).click();
- await page.getByRole('status').filter({hasText:'1 dias considerados'}).waitFor();assert.match(await page.getByRole('status').filter({hasText:'1 dias considerados'}).innerText(),/101,00/);
+ await page.getByRole('status').filter({hasText:'1 dia considerado'}).waitFor();assert.match(await page.getByRole('status').filter({hasText:'1 dia considerado'}).innerText(),/101,00/);
  await page.getByLabel('Senha de administrador',{exact:true}).fill('teste-admin');await page.getByRole('button',{name:'Salvar regra da caderneta'}).click();await page.getByText('Regra salva para os próximos fiados.',{exact:false}).waitFor();
  await page.screenshot({path:'tmp/screenshots/nilson-caderneta-1280.png',fullPage:true});
  await page.setViewportSize({width:1024,height:820});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:'tmp/screenshots/nilson-caderneta-1024.png',fullPage:true});
