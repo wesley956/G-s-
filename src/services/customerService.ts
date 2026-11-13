@@ -106,8 +106,10 @@ export async function addManualDebit(input: {
   amount: string;
   dueDate: string;
   accrualStartDate?:string;
+  operationId?:string;
 }) {
-  return writeOperation("DEBIT", { ...input, amountCents: toCents(input.amount) });
+  const {operationId,amount,...data}=input;
+  return writeOperation("DEBIT", { ...data,description:input.description.trim(), amountCents: toCents(amount) },operationId);
 }
 export async function receiveCustomerPayment(input: {
   customerId: string; amount: string; method: PaymentMethod; description: string; operationId?: string;

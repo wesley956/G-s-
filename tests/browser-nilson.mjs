@@ -70,5 +70,9 @@ try{
  await page.evaluate(()=>{location.hash='/accounts/customer-two';});
  await page.getByRole('heading',{name:'Outro cliente correto',exact:true}).waitFor();await page.waitForFunction(()=>window.__accrualDelaysCompleted>0);
  assert.equal(await page.getByRole('heading',{name:'Outro cliente correto',exact:true}).count(),1);assert.equal(await page.getByLabel('Valor recebido').inputValue(),'');
+ await page.getByLabel('Descrição',{exact:true}).fill('Débito de conferência');await page.locator('form').first().getByLabel(/^Valor/).fill('20,00');await page.evaluate(()=>window.__loseDebitResponseOnce=true);
+ await page.getByRole('button',{name:'Adicionar débito'}).click();await page.getByRole('alert').filter({hasText:'Resposta interrompida após gravar débito'}).waitFor();
+ await page.locator('form').first().getByLabel(/^Valor/).fill('20.00');await page.getByRole('button',{name:'Adicionar débito'}).click();await page.getByText('Lançamento adicionado.',{exact:true}).waitFor();
+ assert.equal(db.prepare("SELECT COUNT(*) n FROM customer_account_entries WHERE customer_id='customer-two' AND type='DEBIT'").get().n,1);
  assert.deepEqual(errors,[]);console.log('PASS: sale blocked states/exact cash, driver/address snapshot, delivery return, mandatory masked admin password, configurable accrual preview, read-only balances, payment retry without duplicate fee; Rust/SQLite backend');
 }catch(e){console.error(await page?.locator('body').innerText());throw e;}finally{await browser?.close();await server.close();}

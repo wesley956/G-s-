@@ -46,6 +46,15 @@ async fn admin_setup_change_and_lost_response_retry_preserve_secure_hash(){
     let records:Vec<String>=sqlx::query_scalar("SELECT request_json FROM operation_results").fetch_all(&f.pool).await.unwrap();assert!(records.iter().all(|r|!r.contains("senha-")&&!r.contains("newPassword")));
 }
 #[tokio::test]
+async fn restoring_an_old_backup_requires_the_current_admin_password(){
+    let f=setup().await;
+    assert!(security::authorize_restore(&f.pool,None).await.is_err());
+    assert!(security::authorize_restore(&f.pool,Some("errada")).await.is_err());
+    security::authorize_restore(&f.pool,Some("teste-admin")).await.unwrap();
+    f.pool.execute("DELETE FROM admin_security").await.unwrap();
+    security::authorize_restore(&f.pool,None).await.unwrap();
+}
+#[tokio::test]
 async fn delivery_assignment_snapshot_completion_cancel_and_inactive_driver(){
     let f=setup().await;let driver=apply(&f.pool,operation("DRIVER",json!({"name":"João","phone":"19999990000","active":true}))).await.unwrap();
     let mut data=input();data["delivery"]=json!({"driverId":driver,"address":"Rua das Águas","number":"48"});

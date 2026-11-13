@@ -49,6 +49,7 @@ window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
   if (dashboardDelay) { await new Promise(resolve => setTimeout(resolve, dashboardDelay)); window.__dashboardDelaysCompleted = (window.__dashboardDelaysCompleted || 0) + 1; }
   if (accrualDelay) { await new Promise(resolve => setTimeout(resolve, accrualDelay)); window.__accrualDelaysCompleted = (window.__accrualDelaysCompleted || 0) + 1; }
   if (command === 'write_operation' && args.operation.kind === 'RECEIVE' && window.__losePaymentResponseOnce) { window.__losePaymentResponseOnce=false; throw new Error('Resposta interrompida após gravar recebimento'); }
+  if (command === 'write_operation' && args.operation.kind === 'DEBIT' && window.__loseDebitResponseOnce) { window.__loseDebitResponseOnce=false; throw new Error('Resposta interrompida após gravar débito'); }
   if (command === 'write_operation' && args.operation.kind === 'REFUND_RECEIPT' && window.__loseRefundResponseOnce) { window.__loseRefundResponseOnce=false; throw new Error('Resposta interrompida após gravar estorno'); }
   if (command === 'write_operation' && args.operation.kind === 'SUPPLIER' && window.__loseSupplierResponseOnce) { window.__loseSupplierResponseOnce=false; throw new Error('Resposta interrompida após gravar fornecedor'); }
   if (command === 'write_operation' && args.operation.kind === 'SUPPLIER_ACTIVE' && window.__loseSupplierStatusResponseOnce) { window.__loseSupplierStatusResponseOnce=false; throw new Error('Resposta interrompida após alterar fornecedor'); }
@@ -78,6 +79,7 @@ export const server = await createServer({
         }
         else if (command === "backup_status") value = {restoreReport,automaticError:null};
         else if (command === "restore_backup") {
+          await nativeOperation(dbPath,{id:crypto.randomUUID(),kind:"RESTORE_AUTHORIZE",data:{adminPassword:args.adminPassword}});
           if (!args.backupId) {value=false;}
           else {
             const directory="tmp/browser-recovery";rmSync(directory,{force:true,recursive:true});

@@ -39,3 +39,8 @@ pub async fn status(pool:&SqlitePool)->Result<bool> {
     sqlx::query_scalar::<_,i64>("SELECT COUNT(*) FROM admin_security WHERE singleton=1").fetch_one(pool).await
         .map(|n|n==1).map_err(|e|e.to_string())
 }
+pub async fn authorize_restore(pool:&SqlitePool,password:Option<&str>)->Result<()> {
+    let stored:Option<String>=sqlx::query_scalar("SELECT password_hash FROM admin_security WHERE singleton=1").fetch_optional(pool).await.map_err(|e|e.to_string())?;
+    if stored.is_none_or(|encoded|matches(password.unwrap_or(""),&encoded)){return Ok(());}
+    Err("Senha de administrador incorreta. Autorize a restauração com a senha atual.".into())
+}

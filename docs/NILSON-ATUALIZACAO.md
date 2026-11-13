@@ -5,7 +5,7 @@ Esta atualização mantém o funcionamento offline e o identificador do banco da
 ## Primeiro uso
 
 1. Em **Configurações → Administrador**, o responsável cadastra sua própria senha, com pelo menos seis caracteres. Não há uma senha padrão de fábrica.
-2. Para mudar essa senha, é obrigatório informar a atual. A senha é protegida com Argon2id e não é gravada no histórico de operações.
+2. Para mudar essa senha ou restaurar um backup, é obrigatório informar a atual. Isso impede contornar a proteção pela restauração de uma cópia antiga. A senha é protegida com Argon2id e não é gravada no histórico de operações.
 3. Em **Entregadores**, cadastre nome e telefone das pessoas que fazem as entregas.
 4. Em **Configurações → Caderneta**, escolha a regra e informe a senha de administrador para salvá-la.
 

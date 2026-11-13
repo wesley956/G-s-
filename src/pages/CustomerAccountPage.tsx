@@ -1,5 +1,6 @@
 import { AccrualControls } from "../components/AccrualControls";
 import { getAccrualPolicy, localDay } from "../services/accrualService";
+import { toCents } from "../lib/money";
 import { receiptDate } from "../lib/receipt";
 import { ArrowLeft, CircleDollarSign, FilePlus2 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -24,6 +25,7 @@ export function CustomerAccountPage() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("PIX");
   const busy = useRef(false);
   const paymentAttempt = useRef<{signature:string; id:string} | null>(null);
+  const debitAttempt = useRef<{signature:string; id:string} | null>(null);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +46,7 @@ export function CustomerAccountPage() {
   useEffect(() => {
     setCustomer(null);setEntries([]);setRefundEntry(null);setError(null);setFeedback(null);
     setDebitAmount("");setDebitDescription("");setDueDate("");setPaymentAmount("");setAccrualStart(localDay());
+    paymentAttempt.current=null;debitAttempt.current=null;
     void load().catch(err=>{if(currentCustomer.current===customerId)setError(String(err));});
     return()=>{loadVersion.current++;};
   }, [customerId]);
@@ -56,7 +59,10 @@ export function CustomerAccountPage() {
   async function submitDebit(event: FormEvent) {
     event.preventDefault(); if (busy.current) return; busy.current = true; setSaving(true); setError(null); setFeedback(null);
     try {
-      await addManualDebit({ customerId, description: debitDescription, amount: debitAmount, dueDate,accrualStartDate:accrualStart });
+      const signature=JSON.stringify({customerId,description:debitDescription.trim(),amountCents:toCents(debitAmount),dueDate,accrualStart});
+      if(debitAttempt.current?.signature!==signature)debitAttempt.current={signature,id:crypto.randomUUID()};
+      await addManualDebit({ customerId, description: debitDescription, amount: debitAmount, dueDate,accrualStartDate:accrualStart,operationId:debitAttempt.current!.id });
+      debitAttempt.current=null;
       setDebitAmount(""); setDebitDescription(""); setDueDate(""); setAccrualStart(localDay()); setFeedback("Lançamento adicionado."); await load();
     } catch (err) { setError(err instanceof Error ? err.message : "Não foi possível lançar."); } finally { busy.current = false; setSaving(false); }
   }
@@ -64,7 +70,7 @@ export function CustomerAccountPage() {
   async function submitPayment(event: FormEvent) {
     event.preventDefault(); if (busy.current) return; busy.current = true; setSaving(true); setError(null); setFeedback(null);
     try {
-      const signature = JSON.stringify({customerId, paymentAmount, paymentMethod});
+      const signature = JSON.stringify({customerId, amountCents:toCents(paymentAmount), paymentMethod});
       if (paymentAttempt.current?.signature !== signature) paymentAttempt.current = {signature, id:crypto.randomUUID()};
       await receiveCustomerPayment({ customerId, amount: paymentAmount, method: paymentMethod, description: "Pagamento de caderneta", operationId: paymentAttempt.current.id });
       paymentAttempt.current = null;
@@ -84,7 +90,7 @@ export function CustomerAccountPage() {
         <div className="account-balance-box"><span>Saldo em aberto</span><strong>{formatCurrency(balance)}</strong></div>
       </header>
 
-      {error && <div className="feedback error">{error}</div>}
+      {error && <div className="feedback error" role="alert">{error}</div>}
       {feedback && <div className="feedback success">{feedback}</div>}
 
       {refundEntry && <ReceiptRefundDialog entry={refundEntry} onClose={() => setRefundEntry(null)} onSuccess={() => { setRefundEntry(null); setFeedback("Recebimento estornado. Os débitos foram reabertos."); void load().catch(err => setError(String(err))); }} />}

@@ -26,11 +26,16 @@ try {
  const copied=new DatabaseSync(path,{readOnly:true});assert.equal(copied.prepare("SELECT stock_quantity FROM products WHERE id='gas'").get().stock_quantity,10);assert.equal(copied.prepare('PRAGMA quick_check').get().quick_check,'ok');copied.close();
  // Cancelling the native file picker preserves the active database.
  db.exec("UPDATE products SET stock_quantity=3 WHERE id='gas'");
+ await page.getByLabel('Senha de administrador para restaurar').fill('errada');
+ await page.getByRole('button',{name:'Restaurar esta cópia'}).first().click();
+ await page.getByRole('alert').filter({hasText:'Senha de administrador incorreta'}).waitFor();assert.equal(db.prepare("SELECT stock_quantity FROM products WHERE id='gas'").get().stock_quantity,3);
+ await page.getByLabel('Senha de administrador para restaurar').fill('teste-admin');
  await page.getByRole('button',{name:'Escolher arquivo para restaurar'}).click();
  await page.getByText('Restauração cancelada. Os dados atuais foram mantidos.',{exact:true}).waitFor();
  assert.equal(db.prepare("SELECT stock_quantity FROM products WHERE id='gas'").get().stock_quantity,3);
  // Native restore prepares/checks the file, makes a preventive snapshot and applies
  // it with pools closed. Only the picker, confirmation and process restart are emulated.
+ await page.getByLabel('Senha de administrador para restaurar').fill('teste-admin');
  await page.getByRole('button',{name:'Restaurar esta cópia'}).first().click();
  await page.getByText('Backup restaurado. A cópia preventiva está na lista de backups.',{exact:true}).waitFor();
  assert.equal(db.prepare("SELECT stock_quantity FROM products WHERE id='gas'").get().stock_quantity,10);
