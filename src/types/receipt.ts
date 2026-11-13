@@ -18,6 +18,7 @@ export type ReceiptCustomer = {
   phone: string | null;
 };
 export type ReceiptSnapshot = {
+  delivery?: {address:string;number:string;driverId:string;driverName:string;driverPhone:string;status?:string;deliveredAt?:string|null}|null;
   version: 1;
   business: Pick<ReceiptSettings, "businessName" | "document" | "address" | "phone" | "footer">;
   customer: ReceiptCustomer | null;

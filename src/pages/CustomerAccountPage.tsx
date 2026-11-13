@@ -1,3 +1,5 @@
+import { AccrualControls } from "../components/AccrualControls";
+import { getAccrualPolicy, localDay } from "../services/accrualService";
 import { receiptDate } from "../lib/receipt";
 import { ArrowLeft, CircleDollarSign, FilePlus2 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -15,6 +17,8 @@ export function CustomerAccountPage() {
   const [entries, setEntries] = useState<AccountEntry[]>([]);
   const [debitAmount, setDebitAmount] = useState("");
   const [debitDescription, setDebitDescription] = useState("");
+  const [accrualEnabled,setAccrualEnabled]=useState(false);
+  const [accrualStart,setAccrualStart]=useState(localDay);
   const [dueDate, setDueDate] = useState("");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("PIX");
@@ -25,7 +29,8 @@ export function CustomerAccountPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    const [customerRow, entryRows] = await Promise.all([getCustomer(customerId), listAccountEntries(customerId)]);
+    const [customerRow, entryRows, policy] = await Promise.all([getCustomer(customerId), listAccountEntries(customerId),getAccrualPolicy()]);
+    setAccrualEnabled(policy.enabled);
     setCustomer(customerRow);
     setEntries(entryRows);
   }
@@ -40,7 +45,7 @@ export function CustomerAccountPage() {
   async function submitDebit(event: FormEvent) {
     event.preventDefault(); if (busy.current) return; busy.current = true; setSaving(true); setError(null); setFeedback(null);
     try {
-      await addManualDebit({ customerId, description: debitDescription, amount: debitAmount, dueDate });
+      await addManualDebit({ customerId, description: debitDescription, amount: debitAmount, dueDate,accrualStartDate:accrualStart });
       setDebitAmount(""); setDebitDescription(""); setDueDate(""); setFeedback("Lançamento adicionado."); await load();
     } catch (err) { setError(err instanceof Error ? err.message : "Não foi possível lançar."); } finally { busy.current = false; setSaving(false); }
   }
@@ -78,6 +83,7 @@ export function CustomerAccountPage() {
           <label className="field"><span>Descrição</span><input value={debitDescription} onChange={(e) => setDebitDescription(e.target.value)} placeholder="Ex.: Nota de água - outubro" /></label>
           <label className="field"><span>Valor</span><div className="money-input"><span>R$</span><input value={debitAmount} onChange={(e) => setDebitAmount(e.target.value)} inputMode="decimal" required /></div></label>
           <label className="field"><span>Vencimento</span><input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></label>
+          {accrualEnabled&&<label className="field"><span>Data inicial do acréscimo</span><input type="date" required value={accrualStart} onChange={e=>setAccrualStart(e.target.value)}/></label>}
           <button disabled={saving} className="secondary-button cash-main-button">Adicionar débito</button>
         </form>
 
@@ -91,7 +97,9 @@ export function CustomerAccountPage() {
         </form>
       </div>
 
+      <AccrualControls entries={entries} onSuccess={()=>{void load().catch(e=>setError(String(e)));}}/>
       <div className="panel">
+        <p className="muted">O saldo inclui os acréscimos calculados até hoje. Linhas “Calculado” são uma prévia; tornam-se lançamentos confirmados ao receber um pagamento ou encerrar a regra.</p>
         <div className="panel-heading-row"><div><p className="eyebrow">Histórico</p><h2>Movimentações da caderneta</h2></div></div>
         <div className="data-table-wrapper">
           <table className="data-table">
@@ -102,7 +110,7 @@ export function CustomerAccountPage() {
                 <td>{entry.description || "—"}{entry.refund_reason && <small className="refund-history">Estornado: {entry.refund_reason} · {entry.refunded_at && receiptDate(entry.refunded_at)}</small>}</td>
                 <td>{entry.due_date ? new Date(entry.due_date + "T12:00:00").toLocaleDateString("pt-BR") : "—"}</td>
                 <td>{entry.type === "PAYMENT" ? `Pagamento · ${receiptMethodNames[entry.payment_method || ""] || "forma não vinculada"}` : entry.sale_id ? "Venda fiado" : "Lançamento"}</td>
-                <td>{entry.status === "CANCELLED" ? (entry.type === "PAYMENT" ? "Estornado" : "Cancelado") : entry.type === "PAYMENT" || entry.status === "PAID" ? "Quitado" : entry.status === "PARTIAL" ? "Parcial" : "Em aberto"}</td>
+                <td>{entry.status === "CANCELLED" ? (entry.type === "PAYMENT" ? "Estornado" : "Cancelado") : entry.accrual_preview ? "Calculado" : entry.type === "PAYMENT" || entry.status === "PAID" ? "Quitado" : entry.status === "PARTIAL" ? "Parcial" : "Em aberto"}</td>
                 <td className={entry.type === "PAYMENT" ? "positive-text" : "warning-text"}>{entry.type === "PAYMENT" ? "- " : "+ "}{formatCurrency(entry.amount_cents)}</td>
                 <td>{entry.type === "PAYMENT" || entry.status === "CANCELLED" ? "—" : formatCurrency(entry.amount_cents - (entry.paid_cents || 0))}</td>
                 <td>{entry.type === "PAYMENT" && entry.status !== "CANCELLED" ? entry.receipt_transaction_id ? <button className="secondary-button" disabled={saving} onClick={() => setRefundEntry(entry)}>Estornar</button> : <span className="muted" title="Recebimento antigo sem vínculo direto ao caixa. Exige revisão do histórico.">Revisar histórico</span> : "—"}</td>

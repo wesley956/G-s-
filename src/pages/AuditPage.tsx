@@ -13,6 +13,9 @@ const kinds = [
   ['CASH_MOVE', 'Movimento de caixa'], ['CLOSE_CASH', 'Fechamento de caixa'],
   ['DEBIT', 'Débito manual'], ['PRODUCT', 'Cadastro / edição de produto'],
   ['SUPPLIER', 'Cadastro / edição de fornecedor'], ['SUPPLIER_ACTIVE', 'Situação do fornecedor'],
+  ['DRIVER','Cadastro / edição de entregador'], ['DELIVER','Finalização de entrega'],
+  ['ADMIN_SETUP','Cadastro de senha de administrador'], ['ADMIN_CHANGE','Troca de senha de administrador'],
+  ['ACCRUAL_SETTINGS','Regra da caderneta'], ['ACCRUAL_PLAN','Acréscimo do débito'],
   ['CATEGORY', 'Cadastro de categoria'], ['UNKNOWN', 'Operação antiga ou desconhecida'],
 ] as const;
 function initialQuery(): AuditQuery {
@@ -55,7 +58,7 @@ export function AuditPage() {
     <header className="page-header"><div><p className="eyebrow">Histórico local</p><h1>Auditoria</h1><p className="muted">Consulte operações confirmadas e os dados preservados no depósito.</p></div></header>
     <div className="panel audit-coverage"><h2>O que aparece aqui</h2>
       <p>Operações de vendas, cancelamentos, estoque, caderneta, despesas, caixa, produtos, fornecedores e categorias disponíveis no histórico local.</p>
-      <p className="muted">Cadastro e situação de clientes, ativação rápida de produtos, preferências e backups não fazem parte deste histórico. Operações anteriores ao registro também podem não aparecer. Não há identificação do operador nem reconstrução de valores anteriores ausentes.</p>
+      <p className="muted">Cadastro e situação de clientes, ativação rápida de produtos, preferências de impressão e backups não fazem parte deste histórico. Operações anteriores ao registro também podem não aparecer. Não há identificação do operador nem reconstrução de valores anteriores ausentes.</p>
     </div>
     <form className="panel audit-filters" onSubmit={event => { event.preventDefault(); void load({ ...filters, page: 1, anchor: null }); }}>
       <label className="field">De<input type="date" required value={filters.start} disabled={busy} onChange={e => setFilters(previous => ({ ...previous, start: e.target.value }))} /></label>

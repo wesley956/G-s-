@@ -1,3 +1,4 @@
+import { SettingsLinks } from "../components/SettingsLinks";
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { checkBackupSchedule, createBackup, exportBackup, getBackupPolicy, listBackups, restoreBackup, setBackupPolicy, type Backup, type BackupPolicy } from '../services/backupService';
@@ -53,6 +54,7 @@ export function BackupSettingsPage() {
     <header className="page-header"><div><p className="eyebrow">Configurações</p><h1>Backup dos dados</h1>
       <p className="muted">Proteja vendas, estoque, caixa, clientes e configurações.</p></div>
       <Link className="secondary-button" to="/settings/printer">Impressão e comprovantes</Link></header>
+    <SettingsLinks />
     {error && <div className="feedback error" role="alert">{error}</div>}
     {feedback && <div className="feedback success" role="status">{feedback}</div>}
     <div className="panel"><h2>Cópia de segurança</h2>

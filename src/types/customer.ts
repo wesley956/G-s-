@@ -27,6 +27,8 @@ export type CustomerFormData = {
 };
 
 export type AccountEntry = {
+  accrual_plan?:import("../services/accrualService").AccrualPreview;
+  accrual_preview?:boolean;
   id: string;
   customer_id: string;
   customer_name?: string;

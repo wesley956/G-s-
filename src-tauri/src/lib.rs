@@ -32,6 +32,16 @@ async fn save_receipt_pdf(
 }
 
 #[tauri::command]
+async fn get_accrual_policy(app:tauri::AppHandle)->Result<domain::accrual::Policy,String>{domain::accrual::get_policy(&database_pool(&app).await?).await}
+#[tauri::command]
+async fn get_accruals(app:tauri::AppHandle,customer_id:Option<String>)->Result<Vec<domain::accrual::Preview>,String>{domain::accrual::previews(&database_pool(&app).await?,customer_id.as_deref()).await}
+#[tauri::command]
+fn preview_accrual(query:domain::accrual::PreviewQuery)->Result<domain::accrual::Calculation,String>{domain::accrual::calculate(query)}
+#[tauri::command]
+async fn get_admin_status(app:tauri::AppHandle)->Result<bool,String> {
+    domain::security::status(&database_pool(&app).await?).await
+}
+#[tauri::command]
 async fn get_audit(app:tauri::AppHandle,query:domain::audit::Query)->Result<domain::audit::Page,String> {
     let pool=database_pool(&app).await?;domain::audit::read(&pool,query).await
 }
@@ -167,6 +177,7 @@ pub fn run() {
             sql: include_str!("../migrations/0007_expenses.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {version:8,description:"nilson_delivery_admin_accrual",sql:include_str!("../migrations/0008_nilson.sql"),kind:MigrationKind::Up},
     ];
 
     tauri::Builder::default()
@@ -183,7 +194,7 @@ pub fn run() {
             Ok(())
         }).build())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![get_audit, get_dashboard, get_report, export_report_csv, save_receipt_pdf, write_operation, log_error, create_backup, list_backups, export_backup, get_backup_policy, set_backup_policy, check_backup_schedule, backup_status, restore_backup])
+        .invoke_handler(tauri::generate_handler![get_accrual_policy, get_accruals, preview_accrual, get_admin_status, get_audit, get_dashboard, get_report, export_report_csv, save_receipt_pdf, write_operation, log_error, create_backup, list_backups, export_backup, get_backup_policy, set_backup_policy, check_backup_schedule, backup_status, restore_backup])
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:deposito.db", migrations)

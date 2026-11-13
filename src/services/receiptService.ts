@@ -32,6 +32,10 @@ export async function getSaleReceipt(saleId: string): Promise<SaleReceipt> {
     ]);
     snapshot = makeReceiptSnapshot(settings, customers[0] ?? null);
   }
+  if(snapshot.delivery){
+    const delivered=await db.select<{status:string;delivered_at:string|null}[]>("SELECT status,delivered_at FROM sale_deliveries WHERE sale_id=?",[saleId]);
+    if(delivered[0])snapshot={...snapshot,delivery:{...snapshot.delivery,status:delivered[0].status,deliveredAt:delivered[0].delivered_at}};
+  }
   return { ...snapshot, sale, items, payments, legacy: !snapshots[0] };
 }
 

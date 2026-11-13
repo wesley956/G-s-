@@ -62,7 +62,13 @@ pub async fn validate(path:&Path)->Result<()> {
         }
         if names.iter().any(|name|name=="_sqlx_migrations") {
             let versions:Vec<i64>=sqlx::query_scalar("SELECT version FROM _sqlx_migrations WHERE success=1").fetch_all(&pool).await.map_err(|e|e.to_string())?;
-            if versions.iter().any(|version|*version>7) {return Err("Este backup é de uma versão mais nova do aplicativo.".into());}
+            if versions.iter().any(|version|*version>8) {return Err("Este backup é de uma versão mais nova do aplicativo.".into());}
+            if versions.contains(&8) {
+                for (table,columns) in [("admin_security","singleton,password_hash,updated_at"),("delivery_drivers","id,name,phone,active,created_at,updated_at"),("sale_deliveries","sale_id,driver_id,address,number,driver_name,driver_phone,status,dispatched_at,delivered_at"),("account_accrual_plans","id,entry_id,start_date,end_date,end_reason,weekly_cents,mode,weekdays_only,posted_cents,created_at"),("account_accrual_posts","entry_id,plan_id,through_date")] {
+                    let rows=sqlx::query(&format!("PRAGMA table_info({table})")).fetch_all(&pool).await.map_err(|e|e.to_string())?;
+                    for column in columns.split(',') {if !rows.iter().any(|row|row.get::<String,_>("name")==column){return Err(format!("Backup incompatível: falta {table}.{column}."));}}
+                }
+            }
             if versions.contains(&7) {
                 for (table,columns) in [("expenses","id,cash_transaction_id,category,supplier_id,supplier_name_snapshot,notes,origin"),("expense_refunds","expense_id,cash_transaction_id,reason,created_at")] {
                     let rows=sqlx::query(&format!("PRAGMA table_info({table})")).fetch_all(&pool).await.map_err(|e|e.to_string())?;
@@ -137,7 +143,7 @@ pub async fn validate_restore(path:&Path)->Result<()> {
     let pool=SqlitePoolOptions::new().max_connections(1).connect_with(SqliteConnectOptions::new().filename(path).read_only(true).create_if_missing(false)).await.map_err(|e|e.to_string())?;
     let result=async {
         let rows=sqlx::query("SELECT version,success,checksum FROM _sqlx_migrations ORDER BY version").fetch_all(&pool).await.map_err(|_|"Backup incompatível: histórico de migrações ausente.".to_string())?;
-        let migrations=[include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql"),include_str!("../migrations/0006_suppliers.sql"),include_str!("../migrations/0007_expenses.sql")];
+        let migrations=[include_str!("../migrations/0001_core.sql"),include_str!("../migrations/0002_cash_receipts.sql"),include_str!("../migrations/0003_sale_receipts.sql"),include_str!("../migrations/0004_integrity.sql"),include_str!("../migrations/0005_receipt_refunds.sql"),include_str!("../migrations/0006_suppliers.sql"),include_str!("../migrations/0007_expenses.sql"),include_str!("../migrations/0008_nilson.sql")];
         if !(4..=migrations.len()).contains(&rows.len()) {return Err("Backup incompatível: versão do banco não suportada.".into());}
         for (index,row) in rows.iter().enumerate() {
             let checksum:Vec<u8>=row.get("checksum");

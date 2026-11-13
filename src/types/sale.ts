@@ -24,6 +24,8 @@ export type PaymentInput = {
 };
 
 export type SaleRecord = {
+  delivery_status?: "OUT"|"DELIVERED"|"CANCELLED"|null;
+  delivery_driver?:string|null; delivery_address?:string|null; delivery_number?:string|null;
   id: string;
   sale_number: number;
   sale_type: SaleType;

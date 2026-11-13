@@ -1,11 +1,27 @@
-import hashlib, json, pathlib, sqlite3, sys, time, uuid
+import hashlib, json, pathlib, sqlite3, sys, time, uuid, subprocess
 from contextlib import closing
 root = pathlib.Path(sys.argv[1])
 mode = sys.argv[2] if len(sys.argv) > 2 else 'validate'
 live = root / 'deposito.db'
 def connect(path):
     return sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True)
-if mode == 'prepare-restore':
+if mode == 'legacy-seed':
+    with sqlite3.connect(live) as db:
+        assert db.execute('SELECT MAX(version) FROM _sqlx_migrations WHERE success=1').fetchone()[0] == 7
+        db.execute("INSERT INTO customers(id,name) VALUES ('upgrade-customer','Cliente da V1')")
+        db.execute("INSERT INTO products(id,name,counter_price_cents,delivery_price_cents,stock_quantity) VALUES ('upgrade-product','Gás da V1',10000,11000,7)")
+        db.execute("INSERT INTO customer_account_entries(id,customer_id,type,description,amount_cents,status) VALUES ('upgrade-debt','upgrade-customer','DEBIT','Fiado da V1',10000,'OPEN')")
+    print('Previous installer started and seeded real v7 customer, product, stock and debt')
+elif mode == 'verify-upgrade':
+    with connect(live) as db:
+        assert db.execute('SELECT MAX(version) FROM _sqlx_migrations WHERE success=1').fetchone()[0] == 8
+        assert db.execute("SELECT name FROM customers WHERE id='upgrade-customer'").fetchone()[0] == 'Cliente da V1'
+        assert db.execute("SELECT stock_quantity FROM products WHERE id='upgrade-product'").fetchone()[0] == 7
+        assert db.execute("SELECT amount_cents FROM customer_account_entries WHERE id='upgrade-debt'").fetchone()[0] == 10000
+        assert db.execute("SELECT COUNT(*) FROM account_accrual_plans").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM admin_security").fetchone()[0] == 0
+    print('PASS: actual v0.1.0 installer upgraded to Nilson v0.2.0 with original v7 data preserved')
+elif mode == 'prepare-restore':
     # The installed app is stopped. Simulate data committed after its first backup.
     with sqlite3.connect(live) as db:
         db.execute("INSERT INTO customers(id,name) VALUES ('smoke-before-restore','Dado atual')")
@@ -28,7 +44,7 @@ if mode == 'prepare-restore':
 elif mode == 'verify-restore':
     assert not (root / 'restore-pending.json').exists(), 'Recovery marker was not consumed'
     with connect(live) as db:
-        assert db.execute('SELECT MAX(version) FROM _sqlx_migrations WHERE success=1').fetchone()[0] == 7
+        assert db.execute('SELECT MAX(version) FROM _sqlx_migrations WHERE success=1').fetchone()[0] == 8
         assert db.execute("SELECT COUNT(*) FROM account_payment_receipts").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM suppliers").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM expenses").fetchone()[0] == 1
@@ -40,7 +56,7 @@ elif mode == 'verify-restore':
     with connect(root / 'backups' / marker['preventive_backup_id']) as copy:
         assert copy.execute("SELECT COUNT(*) FROM customers WHERE id='smoke-before-restore'").fetchone()[0] == 1
         assert copy.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
-    print('PASS: real installed startup restored a v4 backup, upgraded to v7, preserved the legacy expense/closed cash and kept a preventive copy')
+    print('PASS: real installed startup restored a v4 backup, upgraded to v8, preserved the legacy expense/closed cash and kept a preventive copy')
 elif mode == 'seed-reinstall':
     with sqlite3.connect(live) as db:
         db.execute("INSERT INTO customers(id,name) VALUES ('smoke-reinstall','Dado preservado')")
@@ -52,20 +68,35 @@ elif mode == 'seed-reinstall':
         db.execute("INSERT INTO expense_refunds(expense_id,cash_transaction_id,reason) VALUES ('smoke-expense','smoke-expense-in','Devolução preservada')")
         db.commit()
         db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+    runner = pathlib.Path(__file__).resolve().parent.parent / 'src-tauri' / 'target' / 'debug' / 'domain-runner.exe'
+    def native(kind, data):
+        payload = {'dbPath': str(live), 'operation': {'id': str(uuid.uuid4()), 'kind': kind, 'data': data}, 'backupDirectory': str(root / 'backups')}
+        result = subprocess.run([str(runner)], input=json.dumps(payload), text=True, capture_output=True, check=True)
+        response = json.loads(result.stdout)
+        assert 'error' not in response, response
+        return response['value']
+    native('ADMIN_SETUP', {'newPassword':'smoke-admin'})
+    driver = native('DRIVER', {'name':'Entregador preservado','phone':'19988887777','active':True})
+    native('ACCRUAL_SETTINGS', {'adminPassword':'smoke-admin','policy':{'enabled':True,'weeklyCents':500,'mode':'DAILY','weekdaysOnly':True}})
+    native('DEBIT', {'customerId':'smoke-reinstall','amountCents':1000,'description':'Débito com regra preservada'})
 elif mode == 'verify-reinstall':
     with connect(live) as db:
         assert db.execute("SELECT COUNT(*) FROM customers WHERE id='smoke-reinstall'").fetchone()[0] == 1
         assert db.execute("SELECT phone FROM suppliers WHERE id='smoke-supplier'").fetchone()[0] == '19999990000'
         assert db.execute("SELECT notes FROM expenses WHERE id='smoke-expense'").fetchone()[0] == 'Pagamento conferido'
         assert db.execute("SELECT reason FROM expense_refunds WHERE expense_id='smoke-expense'").fetchone()[0] == 'Devolução preservada'
+        assert db.execute("SELECT phone FROM delivery_drivers WHERE name='Entregador preservado'").fetchone()[0] == '19988887777'
+        assert db.execute("SELECT password_hash FROM admin_security").fetchone()[0].startswith('$argon2id$')
+        assert db.execute("SELECT COUNT(*) FROM account_accrual_plans WHERE weekly_cents=500 AND mode='DAILY'").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM operation_results WHERE request_json LIKE '%smoke-admin%'").fetchone()[0] == 0
     print('PASS: reinstall preserves customer, supplier, expense and refund history')
 else:
     with connect(live) as db:
         assert db.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
-        assert db.execute('SELECT MAX(version) FROM _sqlx_migrations WHERE success=1').fetchone()[0] == 7
-        assert db.execute('SELECT COUNT(*) FROM categories').fetchone()[0] == 7
+        assert db.execute('SELECT MAX(version) FROM _sqlx_migrations WHERE success=1').fetchone()[0] == 8
+        assert db.execute('SELECT COUNT(*) FROM categories').fetchone()[0] == 8
     for path in (root / 'backups').glob('*.sqlite'):
         with connect(path) as copy:
             assert copy.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
-            assert copy.execute('SELECT COUNT(*) FROM categories').fetchone()[0] == 7
+            assert copy.execute('SELECT COUNT(*) FROM categories').fetchone()[0] == 8
     print('PASS: installed database and automatic backup reopen independently')

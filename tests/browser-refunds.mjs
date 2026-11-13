@@ -31,8 +31,8 @@ try {
  assert.equal(db.prepare('SELECT COUNT(*) count FROM account_payment_refunds').get().count,1);
  assert.equal(db.prepare('SELECT COUNT(*) count FROM account_payment_allocations').get().count,2);
  assert.equal(db.prepare("SELECT stock_quantity FROM products WHERE id='gas'").get().stock_quantity,9);
- await page.goto('http://127.0.0.1:1420/#/sales');page.once('dialog',d=>d.accept('Cliente devolveu o gás'));
- await page.getByRole('button',{name:'Cancelar',exact:true}).click();await page.getByText('Cancelada',{exact:true}).waitFor();
+ await page.goto('http://127.0.0.1:1420/#/sales');
+ await page.getByRole('button',{name:'Cancelar',exact:true}).click();await page.getByLabel('Motivo do cancelamento').fill('Cliente devolveu o gás');await page.getByLabel('Senha de administrador',{exact:true}).fill('teste-admin');await page.getByRole('button',{name:'Confirmar cancelamento da venda'}).click();await page.getByText('Cancelada',{exact:true}).waitFor();
  assert.equal(db.prepare("SELECT stock_quantity FROM products WHERE id='gas'").get().stock_quantity,10);
  await page.goto('http://127.0.0.1:1420/#/accounts/customer');
  await page.getByLabel('Valor recebido').fill('40,00');await page.getByLabel('Forma de pagamento').selectOption('CASH');

@@ -29,7 +29,20 @@ function Verify-InstalledApp([string] $mode) {
     if (-not $app.WaitForExit(10000)) { throw "Installed process did not stop" }
   }
 }
+$legacySetup = Join-Path $env:RUNNER_TEMP 'gs-legacy-setup.exe'
+if (-not (Test-Path $legacySetup)) { throw 'Previous installer missing for upgrade test' }
+$newInstallDir = $installDir
+$installDir = Join-Path $env:RUNNER_TEMP 'gs-previous-install'
+$legacyProcess = Start-Process -FilePath $legacySetup -ArgumentList '/S',"/D=$installDir" -Wait -PassThru
+if ($legacyProcess.ExitCode -ne 0) { throw 'Previous release installation failed' }
+Verify-InstalledApp 'legacy-seed'
+$legacyInstallDir = $installDir
+$installDir = $newInstallDir
 Install-App
+Verify-InstalledApp 'verify-upgrade'
+$oldRegistration = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\G-s- Gestão de Depósito'
+if (Test-Path $oldRegistration) { throw 'Old program registration was not removed' }
+if (Test-Path (Join-Path $legacyInstallDir 'gs_deposito.exe')) { throw 'Old executable still present after rename' }
 Verify-InstalledApp 'validate'
 python tests/windows-installer-smoke.py $dataDir 'prepare-restore'
 if ($LASTEXITCODE -ne 0) { throw 'Failed to prepare restore fixture' }

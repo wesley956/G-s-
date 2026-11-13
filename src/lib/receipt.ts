@@ -2,7 +2,7 @@ import type { ReceiptSettings, ReceiptSnapshot, ReceiptCustomer, SaleReceipt } f
 import type { PaymentMethod } from "../types/sale";
 
 export const defaultReceiptSettings: ReceiptSettings = {
-  businessName: "G-s- Gestão de Depósito",
+  businessName: "Nilson gás e Água",
   document: "",
   address: "",
   phone: "",
@@ -40,6 +40,7 @@ export function isReceiptSnapshot(value: unknown): value is ReceiptSnapshot {
   if (!value || typeof value !== "object") return false;
   const input = value as Partial<ReceiptSnapshot>;
   if (input.version !== 1 || !input.business || typeof input.business !== "object") return false;
+  if(input.delivery!=null && (typeof input.delivery!=="object" || !["address","number","driverId","driverName","driverPhone"].every(key=>typeof (input.delivery as Record<string,unknown>)[key]==="string"))) return false;
   if (!["businessName", "document", "address", "phone", "footer"].every((key) =>
     typeof (input.business as Record<string, unknown>)[key] === "string")) return false;
   if (input.customer === null) return true;
@@ -89,6 +90,13 @@ export function receiptLines(receipt: SaleReceipt, copy: number, copies: number)
   if (customer?.document) add(`CPF/CNPJ: ${customer.document}`);
   if (customer?.phone) add(`Telefone: ${customer.phone}`);
   if (customer?.address) add(`Endereço: ${customer.address}`);
+  if(receipt.delivery){
+    add(`Endereço da entrega: ${receipt.delivery.address}, ${receipt.delivery.number}`,true);
+    add(`Entregador: ${receipt.delivery.driverName}`);
+    if(receipt.delivery.driverPhone)add(`Telefone do entregador: ${receipt.delivery.driverPhone}`);
+    if(receipt.delivery.status==="DELIVERED")add(`Entrega finalizada${receipt.delivery.deliveredAt?` em ${receiptDate(receipt.delivery.deliveredAt)}`:""}`);
+    else if(receipt.delivery.status==="OUT")add("Em entrega");
+  }
   rule();
   for (const item of receipt.items) {
     add(item.product_name_snapshot, true);

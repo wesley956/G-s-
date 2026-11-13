@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "G-s- Gestão de Depósito",
-  "version": "0.1.0",
+  "productName": "Nilson gás e Água",
+  "version": "0.2.0",
   "identifier": "br.gs.deposito",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "G-s- Gestão de Depósito",
+        "title": "Nilson gás e Água",
         "width": 1366,
         "height": 820,
         "minWidth": 1024,
@@ -45,7 +45,11 @@
         "languages": [
           "PortugueseBR"
         ],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "installerHooks": "./windows-installer-hooks.nsh"
+      },
+      "wix": {
+        "upgradeCode": "84C1B530-7082-5203-85C6-3BAB0D9EE08A"
       }
     }
   },
