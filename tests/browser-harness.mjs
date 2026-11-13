@@ -37,6 +37,7 @@ window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
   const auditDelay = command === 'get_audit' ? window.__delayAudit || 0 : 0;
   if (command === 'get_dashboard' && window.__failDashboard) throw new Error('Falha simulada ao consultar painel');
   const dashboardDelay = command === 'get_dashboard' ? window.__delayDashboard || 0 : 0;
+  const accrualDelay = command === 'get_accruals' && args.customerId === window.__delayAccrualCustomer ? window.__delayAccrualMillis || 0 : 0;
   if (command === 'export_report_csv' && window.__failReportExport) throw new Error('Falha simulada ao salvar CSV');
   if (command === 'export_report_csv') args = { ...args, cancelExport: Boolean(window.__cancelReportExport) };
   if (command === 'save_receipt_pdf' && window.__cancelPdf) return null;
@@ -46,6 +47,7 @@ window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
   const result = await response.json(); if (result.error) throw new Error(result.error);
   if (auditDelay) { await new Promise(resolve => setTimeout(resolve, auditDelay)); window.__auditDelaysCompleted = (window.__auditDelaysCompleted || 0) + 1; }
   if (dashboardDelay) { await new Promise(resolve => setTimeout(resolve, dashboardDelay)); window.__dashboardDelaysCompleted = (window.__dashboardDelaysCompleted || 0) + 1; }
+  if (accrualDelay) { await new Promise(resolve => setTimeout(resolve, accrualDelay)); window.__accrualDelaysCompleted = (window.__accrualDelaysCompleted || 0) + 1; }
   if (command === 'write_operation' && args.operation.kind === 'RECEIVE' && window.__losePaymentResponseOnce) { window.__losePaymentResponseOnce=false; throw new Error('Resposta interrompida após gravar recebimento'); }
   if (command === 'write_operation' && args.operation.kind === 'REFUND_RECEIPT' && window.__loseRefundResponseOnce) { window.__loseRefundResponseOnce=false; throw new Error('Resposta interrompida após gravar estorno'); }
   if (command === 'write_operation' && args.operation.kind === 'SUPPLIER' && window.__loseSupplierResponseOnce) { window.__loseSupplierResponseOnce=false; throw new Error('Resposta interrompida após gravar fornecedor'); }

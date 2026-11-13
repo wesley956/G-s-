@@ -27,15 +27,26 @@ export function CustomerAccountPage() {
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const currentCustomer=useRef(customerId);
+  currentCustomer.current=customerId;
+  const loadVersion=useRef(0);
 
   async function load() {
+    if(currentCustomer.current!==customerId)return;
+    const version=++loadVersion.current;
     const [customerRow, entryRows, policy] = await Promise.all([getCustomer(customerId), listAccountEntries(customerId),getAccrualPolicy()]);
+    if(currentCustomer.current!==customerId || loadVersion.current!==version)return;
     setAccrualEnabled(policy.enabled);
     setCustomer(customerRow);
     setEntries(entryRows);
   }
 
-  useEffect(() => { void load().catch(err => setError(String(err))); }, [customerId]);
+  useEffect(() => {
+    setCustomer(null);setEntries([]);setRefundEntry(null);setError(null);setFeedback(null);
+    setDebitAmount("");setDebitDescription("");setDueDate("");setPaymentAmount("");setAccrualStart(localDay());
+    void load().catch(err=>{if(currentCustomer.current===customerId)setError(String(err));});
+    return()=>{loadVersion.current++;};
+  }, [customerId]);
 
   const balance = useMemo(() => entries.reduce((sum, entry) => {
     if (entry.status === "CANCELLED") return sum;
@@ -46,7 +57,7 @@ export function CustomerAccountPage() {
     event.preventDefault(); if (busy.current) return; busy.current = true; setSaving(true); setError(null); setFeedback(null);
     try {
       await addManualDebit({ customerId, description: debitDescription, amount: debitAmount, dueDate,accrualStartDate:accrualStart });
-      setDebitAmount(""); setDebitDescription(""); setDueDate(""); setFeedback("Lançamento adicionado."); await load();
+      setDebitAmount(""); setDebitDescription(""); setDueDate(""); setAccrualStart(localDay()); setFeedback("Lançamento adicionado."); await load();
     } catch (err) { setError(err instanceof Error ? err.message : "Não foi possível lançar."); } finally { busy.current = false; setSaving(false); }
   }
 
@@ -61,7 +72,7 @@ export function CustomerAccountPage() {
     } catch (err) { setError(err instanceof Error ? err.message : "Não foi possível receber."); } finally { busy.current = false; setSaving(false); }
   }
 
-  if (!customer) return <section>{error ? <div className="feedback error">{error}</div> : <p className="muted">Carregando cliente...</p>}</section>;
+  if (!customer || customer.id!==customerId) return <section>{error ? <div className="feedback error">{error}</div> : <p className="muted">Carregando cliente...</p>}</section>;
 
   return (
     <section>
@@ -97,7 +108,7 @@ export function CustomerAccountPage() {
         </form>
       </div>
 
-      <AccrualControls entries={entries} onSuccess={()=>{void load().catch(e=>setError(String(e)));}}/>
+      <AccrualControls key={customerId} entries={entries} onSuccess={()=>{void load().catch(e=>setError(String(e)));}}/>
       <div className="panel">
         <p className="muted">O saldo inclui os acréscimos calculados até hoje. Linhas “Calculado” são uma prévia; tornam-se lançamentos confirmados ao receber um pagamento ou encerrar a regra.</p>
         <div className="panel-heading-row"><div><p className="eyebrow">Histórico</p><h2>Movimentações da caderneta</h2></div></div>

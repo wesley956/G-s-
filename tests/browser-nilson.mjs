@@ -52,14 +52,23 @@ try{
  await page.goto('http://127.0.0.1:1420/#/sales/new');await page.getByRole('button',{name:/Gás P13/}).click();await page.getByRole('button',{name:'Fiado',exact:true}).click();await page.getByLabel(/^Cliente/).selectOption('customer');
  const start=db.prepare("SELECT date('now','localtime','-14 days') day").get().day;await page.getByLabel('Data inicial do acréscimo',{exact:true}).fill(start);
  await finish().click();await page.getByRole('heading',{name:'Comprovante #3',exact:true}).waitFor();await page.getByRole('button',{name:'Não imprimir / fechar'}).click();
+ assert.equal(await page.getByLabel('Data inicial do acréscimo',{exact:true}).inputValue(),await page.evaluate(()=>new Date().toLocaleDateString('sv-SE')));
  await page.goto('http://127.0.0.1:1420/#/accounts/customer');await page.waitForFunction(()=>document.querySelector('.account-balance-box strong')?.textContent.replace(/\s/g,'')==='R$120,00');
  assert.equal(db.prepare('SELECT COUNT(*) n FROM account_accrual_posts').get().n,0);await page.getByText('Calculado',{exact:true}).waitFor();
  const dashboard=await op('DASHBOARD_READ',{});assert.equal(dashboard.balanceCents,12000);assert.equal(db.prepare('SELECT COUNT(*) n FROM account_accrual_posts').get().n,0);
- await page.getByLabel('Valor recebido').fill('120,00');await page.getByLabel('Forma de pagamento',{exact:true}).selectOption('CASH');await page.evaluate(()=>window.__losePaymentResponseOnce=true);
+ await page.getByLabel('Valor recebido').fill('120,00');await page.getByLabel('Forma de pagamento').selectOption('CASH');await page.evaluate(()=>window.__losePaymentResponseOnce=true);
  await page.getByRole('button',{name:'Registrar pagamento',exact:true}).click();await page.getByRole('alert').filter({hasText:'Resposta interrompida após gravar recebimento'}).waitFor();
  await page.getByRole('button',{name:'Registrar pagamento',exact:true}).click();await page.getByText('Pagamento registrado com sucesso.',{exact:true}).waitFor();
  assert.equal(db.prepare('SELECT COUNT(*) n FROM account_accrual_posts').get().n,1);assert.equal(db.prepare("SELECT COUNT(*) n FROM customer_account_entries WHERE type='PAYMENT'").get().n,1);
  await page.waitForFunction(()=>document.querySelector('.account-balance-box strong')?.textContent.replace(/\s/g,'')==='R$0,00');
  await page.screenshot({path:'tmp/screenshots/nilson-conta-quitada-1024.png',fullPage:true});
+ db.exec("INSERT INTO customers(id,name) VALUES ('customer-two','Outro cliente correto')");
+ await page.goto('http://127.0.0.1:1420/#/dashboard');
+ await page.evaluate(()=>{window.__delayAccrualCustomer='customer';window.__delayAccrualMillis=800;});
+ const delayed=page.waitForResponse(r=>r.url().includes('/__test_ipc')&&r.request().postDataJSON()?.command==='get_accruals'&&r.request().postDataJSON()?.args.customerId==='customer');
+ await page.evaluate(()=>{location.hash='/accounts/customer';});await delayed;
+ await page.evaluate(()=>{location.hash='/accounts/customer-two';});
+ await page.getByRole('heading',{name:'Outro cliente correto',exact:true}).waitFor();await page.waitForFunction(()=>window.__accrualDelaysCompleted>0);
+ assert.equal(await page.getByRole('heading',{name:'Outro cliente correto',exact:true}).count(),1);assert.equal(await page.getByLabel('Valor recebido').inputValue(),'');
  assert.deepEqual(errors,[]);console.log('PASS: sale blocked states/exact cash, driver/address snapshot, delivery return, mandatory masked admin password, configurable accrual preview, read-only balances, payment retry without duplicate fee; Rust/SQLite backend');
 }catch(e){console.error(await page?.locator('body').innerText());throw e;}finally{await browser?.close();await server.close();}

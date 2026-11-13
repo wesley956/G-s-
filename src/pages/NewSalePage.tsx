@@ -162,6 +162,7 @@ export function NewSalePage() {
       setCart([]);
       setSplit({});
       setDueDate("");
+      setAccrualStart(localDay());
       setDiscount("");
       setReceived("");
       setDeliveryAddress("");setDeliveryNumber("");
